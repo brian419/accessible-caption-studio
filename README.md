@@ -30,5 +30,4 @@ accessible-caption-studio/
 ├── src/
 ├── tests/
 ├── .gitignore
-├── LICENSE
 └── README.md
