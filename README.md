@@ -16,6 +16,7 @@ workflow, and production-ready exports in one portfolio application.
 - Suggests SDH-style cues such as `[applause]`, `[door closes]`, and `[music]`
 - Creates readable caption segments instead of dumping a raw transcript
 - Checks timing, overlap, duration, line length, line count, and reading speed
+- Keeps long accessibility reports and caption timelines in matched, independently scrolling panels
 - Provides synchronized video/audio preview and keyboard playback controls
 - Offers persistent light and dark appearance modes under Settings
 - Supports add, edit, delete, split, merge, reorder, and undo

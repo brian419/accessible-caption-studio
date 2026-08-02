@@ -474,29 +474,51 @@ async function runAnalysis() {
 
 function renderFindings() {
   const list = $("#findingList");
+  const overview = $("#findingOverview");
   list.replaceChildren();
+  overview.replaceChildren();
   const findings = state.project.findings || [];
   $("#findingCount").textContent = `${findings.length} ${findings.length === 1 ? "finding" : "findings"}`;
   if (!findings.length) {
+    overview.hidden = true;
+    list.removeAttribute("tabindex");
     const success = document.createElement("p");
     success.className = "success-note";
     success.textContent = "No automatic accessibility issues found.";
     list.append(success);
     return;
   }
-  findings.slice(0, 12).forEach((finding) => {
-    const item = document.createElement("div");
-    item.className = `finding ${finding.severity}`;
-    item.textContent = finding.message;
-    if (finding.cue_id) {
-      const jump = document.createElement("button");
-      jump.type = "button";
-      jump.textContent = "Go to caption";
-      jump.addEventListener("click", () => focusCue(finding.cue_id));
-      item.append(jump);
-    }
-    list.append(item);
+  overview.hidden = false;
+  list.tabIndex = 0;
+  ["error", "warning", "info"].forEach((severity) => {
+    const count = findings.filter((finding) => finding.severity === severity).length;
+    if (!count) return;
+    const summary = document.createElement("span");
+    summary.className = `finding-summary ${severity}`;
+    summary.textContent = `${count} ${severity}${count === 1 ? "" : "s"}`;
+    overview.append(summary);
   });
+  const severityOrder = { error: 0, warning: 1, info: 2 };
+  [...findings]
+    .sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity])
+    .forEach((finding) => {
+      const item = document.createElement("div");
+      item.className = `finding ${finding.severity}`;
+      const severity = document.createElement("span");
+      severity.className = "finding-severity";
+      severity.textContent = finding.severity;
+      const message = document.createElement("p");
+      message.textContent = finding.message;
+      item.append(severity, message);
+      if (finding.cue_id) {
+        const jump = document.createElement("button");
+        jump.type = "button";
+        jump.textContent = "Go to caption";
+        jump.addEventListener("click", () => focusCue(finding.cue_id));
+        item.append(jump);
+      }
+      list.append(item);
+    });
 }
 
 function renderSummary() {
