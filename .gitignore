@@ -17,6 +17,9 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
+.studio-venv/
+.bootstrap/
+.runtime/
 venv/
 env/
 .pytest_cache/
@@ -56,6 +59,8 @@ outputs/
 exports/
 builds/
 coverage/
+storage/
+.setup-complete*
 
 # Large or temporary media files
 *.mp4

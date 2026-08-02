@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Accessible Caption Studio interface preview</title>
+  <desc id="desc">A media preview beside an accessible timeline caption editor.</desc>
+  <rect width="1200" height="650" fill="#f5f7fb"/>
+  <rect width="1200" height="72" fill="#ffffff"/>
+  <rect x="42" y="18" width="44" height="34" rx="8" fill="none" stroke="#2854d6" stroke-width="3"/>
+  <text x="50" y="42" font-family="system-ui" font-weight="800" fill="#2854d6">CC</text>
+  <text x="102" y="37" font-family="system-ui" font-size="18" font-weight="700" fill="#16203a">Accessible Caption Studio</text>
+  <rect x="30" y="100" width="450" height="510" rx="16" fill="#fff" stroke="#dbe2ef"/>
+  <rect x="50" y="122" width="410" height="240" rx="12" fill="#0b1020"/>
+  <rect x="130" y="292" width="250" height="42" rx="5" fill="#000" opacity=".82"/>
+  <text x="155" y="319" font-family="system-ui" font-size="18" fill="#fff">Speaker 1: Welcome back.</text>
+  <rect x="50" y="396" width="120" height="72" rx="9" fill="#f5f7fb"/>
+  <rect x="180" y="396" width="120" height="72" rx="9" fill="#f5f7fb"/>
+  <rect x="310" y="396" width="120" height="72" rx="9" fill="#f5f7fb"/>
+  <text x="66" y="426" font-family="system-ui" font-size="22" font-weight="700" fill="#16203a">24</text>
+  <text x="66" y="449" font-family="system-ui" font-size="12" fill="#65708a">CAPTIONS</text>
+  <text x="196" y="426" font-family="system-ui" font-size="22" font-weight="700" fill="#16203a">2</text>
+  <text x="196" y="449" font-family="system-ui" font-size="12" fill="#65708a">SPEAKERS</text>
+  <text x="326" y="426" font-family="system-ui" font-size="22" font-weight="700" fill="#16203a">3</text>
+  <text x="326" y="449" font-family="system-ui" font-size="12" fill="#65708a">FINDINGS</text>
+  <rect x="500" y="100" width="670" height="510" rx="16" fill="#fff" stroke="#dbe2ef"/>
+  <text x="526" y="145" font-family="system-ui" font-size="13" font-weight="800" fill="#2854d6">TIMELINE EDITOR</text>
+  <text x="526" y="179" font-family="system-ui" font-size="28" font-weight="750" fill="#16203a">Captions</text>
+  <g font-family="system-ui">
+    <rect x="516" y="208" width="638" height="105" fill="#eef4ff"/>
+    <text x="536" y="237" font-size="12" fill="#65708a">00:00:02.400</text>
+    <rect x="655" y="225" width="320" height="58" rx="7" fill="#fff" stroke="#aeb9ce"/>
+    <text x="671" y="259" font-size="16" fill="#16203a">Welcome back to the studio.</text>
+    <text x="1000" y="245" font-size="14" fill="#16203a">Speaker 1</text>
+    <text x="1000" y="270" font-size="12" fill="#0f766e">94% confidence</text>
+    <rect x="516" y="314" width="638" height="105" fill="#fff"/>
+    <text x="536" y="345" font-size="12" fill="#65708a">00:00:05.100</text>
+    <rect x="655" y="330" width="320" height="58" rx="7" fill="#fff" stroke="#aeb9ce"/>
+    <text x="671" y="365" font-size="16" fill="#16203a">[applause]</text>
+    <text x="1000" y="350" font-size="14" fill="#16203a">Sound cue</text>
+    <text x="1000" y="375" font-size="12" fill="#0f766e">88% confidence</text>
+    <rect x="516" y="420" width="638" height="105" fill="#fff"/>
+    <text x="536" y="451" font-size="12" fill="#65708a">00:00:08.250</text>
+    <rect x="655" y="436" width="320" height="58" rx="7" fill="#fff" stroke="#aeb9ce"/>
+    <text x="671" y="471" font-size="16" fill="#16203a">Let’s make this video accessible.</text>
+    <text x="1000" y="456" font-size="14" fill="#16203a">Speaker 2</text>
+    <text x="1000" y="481" font-size="12" fill="#a15c00">68% confidence</text>
+  </g>
+</svg>
+

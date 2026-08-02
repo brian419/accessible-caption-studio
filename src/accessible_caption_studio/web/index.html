@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create automatic, accessible captions privately on your computer.">
+  <title>Accessible Caption Studio</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("accessible-caption-theme")==="dark"?"dark":"light"}catch(_){document.documentElement.dataset.theme="light"}</script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="topbar">
+    <button class="brand" id="homeButton" type="button" aria-label="Accessible Caption Studio home">
+      <span class="brand-mark" aria-hidden="true">CC</span>
+      <span><strong>Accessible Caption Studio</strong><small>Private, local caption authoring</small></span>
+    </button>
+    <div class="top-actions">
+      <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false"><span id="themeIcon" aria-hidden="true">☾</span><span id="themeLabel">Dark mode</span></button>
+      <button class="icon-button" id="settingsButton" type="button" aria-haspopup="dialog">Settings</button>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section id="homeView" class="home-view" aria-labelledby="homeTitle">
+      <div class="hero">
+        <p class="eyebrow">Accessible media, without the busywork</p>
+        <h1 id="homeTitle">Turn a video into captions people can actually use.</h1>
+        <p class="hero-copy">Transcribe speech, identify speakers, describe meaningful sounds, check readability, and export—privately on your computer.</p>
+      </div>
+
+      <div class="import-card">
+        <div class="tabs" role="tablist" aria-label="Choose a media source">
+          <button id="fileTab" role="tab" aria-selected="true" aria-controls="filePanel">Upload a file</button>
+          <button id="youtubeTab" role="tab" aria-selected="false" aria-controls="youtubePanel">YouTube link</button>
+        </div>
+        <div id="filePanel" role="tabpanel" aria-labelledby="fileTab">
+          <form id="uploadForm">
+            <label class="drop-zone" for="mediaInput" id="dropZone">
+              <span class="upload-icon" aria-hidden="true">↑</span>
+              <strong>Choose a video or audio file</strong>
+              <span>MP4, MOV, WebM, MP3, WAV, or M4A</span>
+              <input id="mediaInput" name="media" type="file" accept="video/mp4,video/quicktime,video/webm,audio/mpeg,audio/wav,audio/x-m4a,.m4a" required>
+            </label>
+            <div class="optional-row">
+              <label for="captionInput"><strong>Already have captions?</strong> <span>Optional SRT or VTT</span></label>
+              <input id="captionInput" name="captions" type="file" accept=".srt,.vtt,text/vtt">
+            </div>
+            <button class="primary wide" type="submit">Create captions</button>
+          </form>
+        </div>
+        <div id="youtubePanel" role="tabpanel" aria-labelledby="youtubeTab" hidden>
+          <form id="youtubeForm" class="youtube-form">
+            <div class="youtube-form-heading">
+              <span class="source-icon" aria-hidden="true">▶</span>
+              <div><h2>Caption a YouTube video</h2><p>Paste the link to one video and we’ll prepare it for local captioning.</p></div>
+            </div>
+            <label for="youtubeUrl"><strong>YouTube video URL</strong></label>
+            <div class="youtube-import-row">
+              <input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" required>
+              <button class="primary" type="submit">Import and caption</button>
+            </div>
+            <p class="permission-note"><span aria-hidden="true">ⓘ</span><span>Download only videos you have permission to use. Playlists are not imported.</span></p>
+          </form>
+        </div>
+      </div>
+
+      <section class="recent" aria-labelledby="recentTitle">
+        <div class="section-heading"><div><p class="eyebrow">Continue your work</p><h2 id="recentTitle">Recent projects</h2></div><button id="refreshProjects" class="text-button" type="button">Refresh</button></div>
+        <div id="projectList" class="project-grid"></div>
+        <p id="emptyProjects" class="empty-state">Your saved projects will appear here.</p>
+      </section>
+    </section>
+
+    <section id="workspaceView" class="workspace" hidden aria-labelledby="projectTitle">
+      <div class="workspace-bar">
+        <button id="backButton" class="text-button" type="button">← All projects</button>
+        <input id="projectTitle" class="project-title" aria-label="Project name" maxlength="120">
+        <div class="workspace-actions">
+          <span id="saveStatus" class="save-status" role="status">Saved</span>
+          <button id="analyzeButton" class="secondary" type="button">Run analysis</button>
+          <button id="validateButton" class="secondary" type="button">Check captions</button>
+          <button id="exportButton" class="primary" type="button" aria-haspopup="dialog">Export</button>
+        </div>
+      </div>
+
+      <div id="jobPanel" class="job-panel" role="status" aria-live="polite" hidden>
+        <div><strong id="jobStage">Preparing</strong><span id="jobMessage">Starting local analysis…</span></div>
+        <div class="job-progress"><progress id="jobProgress" max="100" value="0">0%</progress><strong id="jobPercent">0%</strong></div>
+        <button id="cancelJob" class="text-button" type="button">Cancel</button>
+      </div>
+
+      <div class="studio-grid">
+        <section class="preview-panel" aria-labelledby="previewTitle">
+          <h2 id="previewTitle" class="sr-only">Media preview</h2>
+          <div class="media-stage">
+            <video id="mediaPlayer" controls preload="metadata"></video>
+            <audio id="audioPlayer" controls preload="metadata" hidden></audio>
+            <div id="captionOverlay" class="caption-overlay" aria-hidden="true"></div>
+          </div>
+          <div class="playback-help"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 5 seconds</span></div>
+          <div class="quality-summary" id="qualitySummary"></div>
+          <section class="findings" aria-labelledby="findingsTitle">
+            <div class="section-heading compact"><h3 id="findingsTitle">Accessibility findings</h3><span id="findingCount"></span></div>
+            <div id="findingList"></div>
+          </section>
+        </section>
+
+        <section class="editor-panel" aria-labelledby="captionsTitle">
+          <div class="editor-heading">
+            <div><p class="eyebrow">Timeline editor</p><h2 id="captionsTitle">Captions</h2></div>
+            <div class="editor-tools">
+              <button id="undoButton" class="icon-button" type="button" disabled>Undo</button>
+              <button id="addCueButton" class="secondary" type="button">+ Add caption</button>
+            </div>
+          </div>
+          <div class="column-labels" aria-hidden="true"><span>Time</span><span>Caption text</span><span>Speaker & confidence</span></div>
+          <div id="cueList" class="cue-list"></div>
+          <p id="emptyCues" class="empty-state">Captions will appear here when analysis finishes.</p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Local model setup</p><h2>Settings and storage</h2></div><button class="icon-button" value="cancel" aria-label="Close settings">✕</button></div>
+      <section>
+        <h3>Appearance</h3>
+        <label class="theme-setting" for="darkModeSetting"><span><strong>Dark mode</strong><small>Use a darker color palette throughout the studio.</small></span><input id="darkModeSetting" type="checkbox" role="switch"></label>
+      </section>
+      <section>
+        <h3>Speaker labeling</h3>
+        <p>Pyannote needs a free Hugging Face token once. On Apple Silicon, accept the <a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer">Community-1 terms</a>. Intel Macs instead need the compatible <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noreferrer">3.1 model terms</a> and <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noreferrer">segmentation 3.0 terms</a>. Then paste a read token below; it stays on this Mac. Captions still work without speaker labeling.</p>
+        <label for="hfToken">Hugging Face token</label>
+        <div class="input-action"><input id="hfToken" type="password" placeholder="hf_…" autocomplete="off"><button id="saveToken" class="secondary" type="button">Save token</button></div>
+        <p id="tokenStatus" class="field-note" role="status"></p>
+      </section>
+      <section>
+        <h3>Storage</h3>
+        <div id="storageStats" class="storage-stats"></div>
+        <div class="button-row"><button id="clearModels" class="danger-secondary" type="button">Clear model cache</button><button id="clearTemporary" class="secondary" type="button">Clear temporary files</button></div>
+      </section>
+    </form>
+  </dialog>
+
+  <dialog id="exportDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Share your work</p><h2>Export accessible captions</h2></div><button class="icon-button" value="cancel" aria-label="Close export options">✕</button></div>
+      <div class="export-grid">
+        <button type="button" data-export="srt"><strong>SRT captions</strong><span>Works with most video platforms</span></button>
+        <button type="button" data-export="vtt"><strong>WebVTT captions</strong><span>Designed for web video</span></button>
+        <button type="button" data-export="html"><strong>HTML transcript</strong><span>Readable, accessible document</span></button>
+        <button type="button" data-export="mp4"><strong>Captioned MP4</strong><span>Captions rendered into the video</span></button>
+      </div>
+      <div id="exportResults" class="export-results" aria-live="polite"></div>
+    </form>
+  </dialog>
+
+  <dialog id="exportCompleteDialog" class="export-complete-dialog" aria-labelledby="exportCompleteTitle">
+    <div class="dialog-card export-complete-card">
+      <div class="completion-icon" aria-hidden="true">✓</div>
+      <p class="eyebrow">Export complete</p>
+      <h2 id="exportCompleteTitle">Your file is ready</h2>
+      <p id="exportCompleteMessage"></p>
+      <p id="exportSavedLocation" class="saved-location"></p>
+      <div class="button-row completion-actions">
+        <button id="closeExportComplete" class="secondary" type="button">Close</button>
+        <a id="downloadCompletedExport" class="button-link primary" href="#">Download</a>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
