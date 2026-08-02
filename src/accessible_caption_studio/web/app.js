@@ -33,7 +33,6 @@ function bindEvents() {
   $("#mediaInput").addEventListener("change", updateFileLabel);
   bindDropZone();
   $("#settingsButton").addEventListener("click", openSettings);
-  $("#themeToggle").addEventListener("click", toggleTheme);
   $("#darkModeSetting").addEventListener("change", (event) => applyTheme(event.target.checked ? "dark" : "light"));
   $("#saveToken").addEventListener("click", saveToken);
   $("#clearModels").addEventListener("click", () => clearStorage("models"));
@@ -53,16 +52,9 @@ function bindEvents() {
   document.addEventListener("keydown", playbackKeys);
 }
 
-function toggleTheme() {
-  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
-}
-
 function applyTheme(theme, persist = true) {
   const dark = theme === "dark";
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  $("#themeToggle").setAttribute("aria-pressed", String(dark));
-  $("#themeIcon").textContent = dark ? "☀" : "☾";
-  $("#themeLabel").textContent = dark ? "Light mode" : "Dark mode";
   $("#darkModeSetting").checked = dark;
   if (persist) {
     try { localStorage.setItem(themeStorageKey, dark ? "dark" : "light"); }

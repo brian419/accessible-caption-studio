@@ -69,8 +69,6 @@ a { color: var(--blue-dark); }
 .brand strong, .brand small { display: block; }
 .brand small { color: var(--muted); margin-top: 2px; }
 .top-actions, .workspace-actions, .editor-tools, .button-row { display: flex; align-items: center; gap: .65rem; }
-.theme-toggle { display: inline-flex; align-items: center; gap: .45rem; color: var(--blue-dark); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: .55rem .8rem; font-weight: 750; }
-.theme-toggle:hover { background: var(--sky); border-color: var(--blue); }
 
 main { min-height: calc(100vh - 76px); }
 .home-view { max-width: 1120px; margin: auto; padding: clamp(2.5rem, 7vw, 6rem) 1.25rem; }
@@ -215,7 +213,7 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
   .workspace-actions { grid-row: 2; }
 }
 @media (max-width: 650px) {
-  .theme-toggle span:last-child, .column-labels, .save-status { display: none; }
+  .column-labels, .save-status { display: none; }
   .brand small { display: none; }
   .topbar { padding-inline: .7rem; }
   .input-action, .optional-row { align-items: stretch; flex-direction: column; }

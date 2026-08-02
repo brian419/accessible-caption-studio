@@ -17,7 +17,7 @@ workflow, and production-ready exports in one portfolio application.
 - Creates readable caption segments instead of dumping a raw transcript
 - Checks timing, overlap, duration, line length, line count, and reading speed
 - Provides synchronized video/audio preview and keyboard playback controls
-- Offers persistent light and dark appearance modes from the navbar or Settings
+- Offers persistent light and dark appearance modes under Settings
 - Supports add, edit, delete, split, merge, reorder, and undo
 - Saves projects automatically so they can be reopened later
 - Exports UTF-8 SRT, WebVTT, accessible HTML transcripts, and captioned MP4 video
