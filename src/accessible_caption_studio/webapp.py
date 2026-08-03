@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
@@ -41,12 +41,14 @@ from .visual import analyze_active_speakers
 class YouTubeRequest(BaseModel):
     url: str
     cookie_browser: Literal["brave", "chrome", "edge", "firefox", "safari"] | None = None
+    transcription_quality: Literal["fast", "accurate"] = "accurate"
 
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
     cues: list[CaptionCue] | None = None
     speaker_names: dict[str, str] | None = None
+    transcription_quality: Literal["fast", "accurate"] | None = None
 
 
 class OverlapRequest(BaseModel):
@@ -104,9 +106,11 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     async def upload_project(
         media: Annotated[UploadFile, File()],
         captions: Annotated[UploadFile | None, File()] = None,
+        transcription_quality: Annotated[Literal["fast", "accurate"], Form()] = "accurate",
     ) -> dict[str, Any]:
         filename = safe_filename(media.filename or "media")
         project = store.create(Path(filename).stem)
+        project.transcription_quality = transcription_quality
         project_dir = store.project_dir(project.id)
         destination = project_dir / filename
         try:
@@ -132,6 +136,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/youtube", status_code=202)
     def youtube_project(request: YouTubeRequest) -> dict[str, Any]:
         project = store.create("YouTube video")
+        project.transcription_quality = request.transcription_quality
+        store.save(project)
 
         def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
             progress("Downloading", 5, "Downloading the selected YouTube video")
@@ -173,6 +179,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             )
         if request.speaker_names is not None:
             project.speaker_names = request.speaker_names
+        if request.transcription_quality is not None:
+            project.transcription_quality = request.transcription_quality
         return store.save(project)
 
     @app.delete("/api/projects/{project_id}", status_code=204)
@@ -216,7 +224,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             if not audio.is_file():
                 progress("Preparing audio", 5, "Extracting the selected local audio track")
                 extract_audio(project_dir / current.media.stored_name, audio, progress)
-            analyzer = LocalAnalyzer(store.models_dir)
+            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
             channels, matched_speakers = analyzer.analyze_overlap(
                 audio, request.start, request.end, current.speakers, progress
             )
@@ -297,7 +305,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 10,
                 "Loading the local voice model; this can take a few minutes on Intel Macs",
             )
-            analyzer = LocalAnalyzer(store.models_dir)
+            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
             try:
                 speakers = analyzer.diarize(
                     audio,
@@ -462,7 +470,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                     )
                 except (OSError, ValueError):
                     cuts = []
-            analyzer = LocalAnalyzer(store.models_dir)
+            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
             recovered_words, recovery_summary = analyzer.recover_transcription(
                 audio, current.words, progress, cuts
             )
@@ -731,7 +739,7 @@ def _analysis_task(
     progress("Preparing audio", 10, "Extracting a private local analysis track")
     if not audio.is_file():
         extract_audio(source, audio, progress)
-    analyzer = LocalAnalyzer(store.models_dir)
+    analyzer = LocalAnalyzer(store.models_dir, project.transcription_quality)
     words, speakers, sounds, cues = analyzer.analyze(
         audio, progress, project.expected_speaker_count
     )

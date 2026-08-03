@@ -20,7 +20,6 @@ def _speaker_number(label: str) -> int:
 
 def _turn_identity_scores(turn: SpeakerTurn, tracks: list[dict]) -> list[tuple[float, str]]:
     values: dict[str, list[float]] = defaultdict(list)
-    visible: set[str] = set()
     for track in tracks:
         identity = track.get("identity_cluster_id")
         if not identity:
@@ -31,15 +30,12 @@ def _turn_identity_scores(turn: SpeakerTurn, tracks: list[dict]) -> list[tuple[f
             if turn.start - 0.08 <= float(sample["time"]) <= turn.end + 0.08
         ]
         if samples:
-            visible.add(identity)
             values[identity].extend(float(sample["active_confidence"]) for sample in samples)
     scores = []
     for identity, activity in values.items():
         mean = sum(activity) / len(activity)
         peak = max(activity)
         score = 0.55 * mean + 0.45 * peak
-        if len(visible) == 1:
-            score = max(score, 0.72)
         scores.append((min(1.0, score), identity))
     return sorted(scores, reverse=True)
 
@@ -116,7 +112,7 @@ def _fuse_words(
         decisive = bool(
             identity
             and matching_tracks
-            and best_score >= 0.65
+            and best_score >= 0.75
             and best_score - runner_up >= 0.15
         )
         track_id = matching_tracks[0]["id"] if decisive else None
@@ -180,18 +176,44 @@ def _fuse_words(
 
     word_turns: list[SpeakerTurn] = []
     associations: list[float] = []
-    for word, audio, (identity, visual_confidence, track_id) in zip(
-        words, audio_by_word, word_decisions, strict=True
+    for index, (word, audio, (identity, visual_confidence, track_id)) in enumerate(
+        zip(words, audio_by_word, word_decisions, strict=True)
     ):
         face_speaker = identity_speakers.get(identity or "")
         voice_speaker = voice_mapping.get(audio.speaker, audio.speaker) if audio else None
-        if face_speaker:
+        audio_confidence = audio.confidence if audio else None
+        previous_end = words[index - 1].end if index else word.start
+        cut_supports_change = any(
+            previous_end - 0.05 <= cut <= word.start + 0.05
+            for cut in camera_cuts or []
+        )
+        if face_speaker and voice_speaker == face_speaker:
+            speaker = voice_speaker
+            associations.append(visual_confidence)
+            method = "voice_face"
+        elif (
+            face_speaker
+            and voice_speaker
+            and visual_confidence >= 0.8
+            and ((audio_confidence or 0) < 0.62 or cut_supports_change)
+        ):
             speaker = face_speaker
             associations.append(visual_confidence)
-            method = "voice_face" if audio else "face_only"
-        else:
+            method = "voice_face"
+        elif voice_speaker:
             speaker = voice_speaker
-            method = "voice_only" if audio and (audio.confidence or 0) >= 0.5 else "uncertain"
+            method = (
+                "uncertain"
+                if face_speaker and face_speaker != voice_speaker
+                else "voice_only" if (audio_confidence or 0) >= 0.5 else "uncertain"
+            )
+        elif face_speaker:
+            speaker = face_speaker
+            associations.append(visual_confidence)
+            method = "face_only"
+        else:
+            speaker = None
+            method = "uncertain"
         if not speaker:
             word.speaker = None
             word.speaker_confidence = None

@@ -5,7 +5,6 @@ import math
 import re
 import sys
 import wave
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from .models import WordToken
@@ -45,11 +44,11 @@ def detect_recovery_regions(
     audio_path: Path,
     words: list[WordToken],
     camera_cuts: list[float] | None = None,
+    *,
+    speech_regions: list[tuple[float, float]] | None = None,
 ) -> list[tuple[float, float]]:
     """Find bounded regions worth a context-free Whisper retry."""
 
-    if not words:
-        return []
     energy = _rms_windows(audio_path)
     nonzero = sorted(value for _, value in energy if value > 0)
     noise = nonzero[max(0, len(nonzero) // 4 - 1)] if nonzero else 0
@@ -64,13 +63,36 @@ def detect_recovery_regions(
         )
 
     regions: list[tuple[float, float]] = []
+    for speech_start, speech_end in speech_regions or []:
+        if speech_end <= speech_start:
+            continue
+        covered = sorted(
+            (
+                max(speech_start, word.start - 0.16),
+                min(speech_end, word.end + 0.16),
+            )
+            for word in words
+            if word.start < speech_end and word.end > speech_start
+        )
+        cursor = speech_start
+        for covered_start, covered_end in covered:
+            if covered_start - cursor >= 0.55:
+                regions.append(
+                    (max(0.0, cursor - 0.45), min(speech_end + 0.45, covered_start + 0.45))
+                )
+            cursor = max(cursor, covered_end)
+        if speech_end - cursor >= 0.55:
+            regions.append((max(0.0, cursor - 0.45), speech_end + 0.45))
+        if not covered:
+            regions.append((max(0.0, speech_start - 0.45), speech_end + 0.45))
     for word in words:
         if word.confidence is not None and word.confidence < 0.62:
             regions.append((max(0.0, word.start - 0.7), word.end + 0.7))
-    for left, right in zip(words, words[1:], strict=False):
-        gap = right.start - left.end
-        if 0.28 <= gap <= 3.0 and energetic(left.end, right.start):
-            regions.append((max(0.0, left.end - 0.65), right.start + 0.65))
+    if not speech_regions:
+        for left, right in zip(words, words[1:], strict=False):
+            gap = right.start - left.end
+            if gap >= 0.28 and energetic(left.end, right.start):
+                regions.append((max(0.0, left.end - 0.65), right.start + 0.65))
     for cut in camera_cuts or []:
         nearby = [word for word in words if word.start - 0.5 <= cut <= word.end + 0.5]
         if nearby:
@@ -83,11 +105,11 @@ def merge_regions(regions: list[tuple[float, float]]) -> list[tuple[float, float
     for start, end in sorted(regions):
         if end <= start:
             continue
-        if merged and start <= merged[-1][1] + 1.5 and end - merged[-1][0] <= 15:
+        if merged and start <= merged[-1][1] + 0.6 and end - merged[-1][0] <= 15:
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, min(end, start + 15)])
-    maximum_total = 50.0
+    maximum_total = 180.0
     if sum(end - start for start, end in merged) > maximum_total:
         selected: list[list[float]] = []
         used = 0.0
@@ -116,78 +138,40 @@ def merge_recovery_words(
     inserted = 0
     replaced = 0
     discarded = 0
-    utterances: list[list[WordToken]] = []
     usable_recovery = [word for word in recovery if (word.confidence or 0) >= 0.35]
     for candidate in sorted(usable_recovery, key=lambda word: (word.start, word.end)):
-        if not utterances or candidate.start - utterances[-1][-1].end > 1.1:
-            utterances.append([])
-        utterances[-1].append(candidate)
-
-    for utterance in utterances:
-        start, end = utterance[0].start, utterance[-1].end
-        matches = [word for word in merged if word.start < end + 0.15 and word.end > start - 0.15]
-        recovery_text = " ".join(_normalized(word.text) for word in utterance)
-        primary_text = " ".join(_normalized(word.text) for word in matches)
-        similarity = SequenceMatcher(None, recovery_text, primary_text).ratio()
-        recovery_values = [word.confidence or 0 for word in utterance]
-        primary_values = [word.confidence or 0 for word in matches]
-        recovery_confidence = sum(recovery_values) / len(recovery_values)
-        primary_confidence = (
-            sum(primary_values) / len(primary_values) if primary_values else 0.0
+        moment_matches = [word for word in merged if _same_moment(word, candidate)]
+        same_text = next(
+            (
+                word
+                for word in moment_matches
+                if _normalized(word.text) == _normalized(candidate.text)
+            ),
+            None,
         )
-
-        should_replace = bool(
-            matches
-            and similarity < 0.62
-            and recovery_confidence >= 0.65
-            and (
-                primary_confidence < 0.55
-                or recovery_confidence >= primary_confidence + 0.18
-            )
-        )
-        if should_replace:
-            recovery_tokens = {_normalized(word.text) for word in utterance}
-            trailing_rescue = [
-                word.model_copy(deep=True)
-                for word in matches
-                if (word.confidence or 0) >= 0.8
-                and _normalized(word.text) not in recovery_tokens
-                and end - 0.2 <= word.end <= end + 1.0
-            ]
-            for word in matches:
-                merged.remove(word)
-            merged.extend(
-                word.model_copy(update={"transcription_source": "recovery"})
-                for word in utterance
-            )
-            for rescued in trailing_rescue:
-                rescued.start = max(rescued.start, end + 0.02)
-                rescued.end = max(rescued.start, rescued.end)
-                merged.append(rescued)
-            replaced += len(matches)
+        if same_text:
+            if (candidate.confidence or 0) > (same_text.confidence or 0):
+                same_text.confidence = candidate.confidence
+            discarded += 1
             continue
-        if not matches and recovery_confidence >= 0.65:
-            merged.extend(
-                word.model_copy(update={"transcription_source": "recovery"})
-                for word in utterance
+        if not moment_matches and (candidate.confidence or 0) >= 0.5:
+            merged.append(
+                candidate.model_copy(update={"transcription_source": "recovery"})
             )
-            inserted += len(utterance)
+            inserted += 1
             continue
-        if similarity >= 0.62:
-            for candidate in utterance:
-                same_text = next(
-                    (
-                        word
-                        for word in matches
-                        if _same_moment(word, candidate)
-                        and _normalized(word.text) == _normalized(candidate.text)
-                    ),
-                    None,
+        if moment_matches:
+            weakest = min(moment_matches, key=lambda word: word.confidence or 0)
+            confidence_gain = (candidate.confidence or 0) - (weakest.confidence or 0)
+            if (candidate.confidence or 0) >= 0.68 and (
+                (weakest.confidence or 0) < 0.55 or confidence_gain >= 0.18
+            ):
+                merged.remove(weakest)
+                merged.append(
+                    candidate.model_copy(update={"transcription_source": "recovery"})
                 )
-                if same_text and (candidate.confidence or 0) > (
-                    same_text.confidence or 0
-                ):
-                    same_text.confidence = candidate.confidence
-        discarded += len(utterance)
+                replaced += 1
+                continue
+        discarded += 1
     merged.sort(key=lambda word: (word.start, word.end))
     return merged, {"inserted": inserted, "replaced": replaced, "discarded": discarded}

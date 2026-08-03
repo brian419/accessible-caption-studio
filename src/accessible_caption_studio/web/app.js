@@ -27,6 +27,7 @@ const activeSpeakerStorageKey = "accessible-caption-active-speaker";
 const followPlaybackStorageKey = "accessible-caption-follow-playback";
 const youtubeBrowserSignInStorageKey = "accessible-caption-youtube-browser-sign-in";
 const youtubeCookieBrowserStorageKey = "accessible-caption-youtube-cookie-browser";
+const transcriptionQualityStorageKey = "accessible-caption-transcription-quality";
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -35,6 +36,7 @@ async function init() {
   try { $("#activeSpeakerSetting").checked = localStorage.getItem(activeSpeakerStorageKey) === "true"; } catch (_) {}
   try { state.followPlayback = localStorage.getItem(followPlaybackStorageKey) !== "false"; } catch (_) {}
   restoreBrowserSignIn();
+  restoreTranscriptionQuality();
   bindEvents();
   updateFollowPlaybackButton();
   await loadProjects();
@@ -55,6 +57,7 @@ function bindEvents() {
   $("#settingsButton").addEventListener("click", openSettings);
   $("#darkModeSetting").addEventListener("change", (event) => applyTheme(event.target.checked ? "dark" : "light"));
   $("#activeSpeakerSetting").addEventListener("change", toggleActiveSpeaker);
+  $("#transcriptionQualitySetting").addEventListener("change", saveTranscriptionQuality);
   $("#clearModels").addEventListener("click", () => clearStorage("models"));
   $("#clearTemporary").addEventListener("click", () => clearStorage("temporary"));
   $("#projectTitle").addEventListener("input", scheduleSave);
@@ -214,7 +217,9 @@ async function uploadMedia(event) {
   if (!$("#mediaInput").files[0]) return;
   setBusy(form, true, "Importing…");
   try {
-    const payload = await api("/api/projects/upload", { method: "POST", body: new FormData(form) });
+    const formData = new FormData(form);
+    formData.set("transcription_quality", $("#transcriptionQualitySetting").value);
+    const payload = await api("/api/projects/upload", { method: "POST", body: formData });
     state.project = payload.project;
     showWorkspace();
     if (payload.job) monitorJob(payload.job);
@@ -237,6 +242,7 @@ async function importYouTube(event) {
       body: JSON.stringify({
         url: $("#youtubeUrl").value,
         cookie_browser: $("#useBrowserSignIn").checked ? $("#cookieBrowser").value : null,
+        transcription_quality: $("#transcriptionQualitySetting").value,
       }),
     });
     state.project = payload.project;
@@ -273,6 +279,19 @@ function saveBrowserSignIn() {
     localStorage.setItem(youtubeBrowserSignInStorageKey, String($("#useBrowserSignIn").checked));
     localStorage.setItem(youtubeCookieBrowserStorageKey, $("#cookieBrowser").value);
   } catch (_) { /* The choice still applies for this session. */ }
+}
+
+function restoreTranscriptionQuality() {
+  try {
+    const saved = localStorage.getItem(transcriptionQualityStorageKey);
+    $("#transcriptionQualitySetting").value = saved === "fast" ? "fast" : "accurate";
+  } catch (_) { $("#transcriptionQualitySetting").value = "accurate"; }
+}
+
+function saveTranscriptionQuality() {
+  try {
+    localStorage.setItem(transcriptionQualityStorageKey, $("#transcriptionQualitySetting").value);
+  } catch (_) { /* The selected quality still applies for this session. */ }
 }
 
 function setBusy(form, busy, label = "") {

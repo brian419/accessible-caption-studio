@@ -155,6 +155,10 @@ progress { width: 100%; accent-color: var(--blue); }
 .speaker-name-fields { display: grid; gap: .7rem; margin-top: 1rem; }
 .speaker-name-fields label { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: .7rem; font-weight: 750; }
 .speaker-name-fields input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: .6rem; color: var(--ink); background: var(--control); }
+.quality-setting { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.quality-setting span { display: grid; gap: .2rem; }
+.quality-setting small { color: var(--muted); line-height: 1.4; }
+.quality-setting select { min-width: 130px; border: 1px solid #aeb9ce; border-radius: 9px; padding: .6rem .75rem; color: var(--ink); background: var(--control); }
 .playback-help { display: flex; gap: 1rem; color: var(--muted); font-size: .78rem; padding: .65rem .2rem; }
 kbd { background: #edf0f5; border: 1px solid #ccd3df; border-bottom-width: 2px; padding: .05rem .28rem; border-radius: 4px; }
 .quality-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin: .7rem 0 1.1rem; }

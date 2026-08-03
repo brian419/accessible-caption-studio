@@ -50,8 +50,11 @@ SOUND_LABELS = {
 
 
 class LocalAnalyzer:
-    def __init__(self, model_dir: Path) -> None:
+    def __init__(self, model_dir: Path, transcription_quality: str = "accurate") -> None:
         self.model_dir = model_dir
+        self.transcription_quality = (
+            transcription_quality if transcription_quality in {"fast", "accurate"} else "accurate"
+        )
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.warnings: list[tuple[str, str]] = []
 
@@ -109,6 +112,8 @@ class LocalAnalyzer:
                     sys.executable,
                     "-m",
                     "accessible_caption_studio.whisper_worker",
+                    "--model",
+                    "small.en" if self.transcription_quality == "fast" else "distil-large-v3",
                     str(audio_path),
                     str(whisper_dir),
                     str(output_path),
@@ -138,6 +143,36 @@ class LocalAnalyzer:
                     "transcription_failed", "Whisper returned an unreadable result."
                 ) from exc
 
+    def detect_speech_regions(
+        self, audio_path: Path, progress: ProgressCallback | None = None
+    ) -> list[tuple[float, float]]:
+        with tempfile.TemporaryDirectory(dir=self.model_dir) as temporary_dir:
+            output_path = Path(temporary_dir) / "speech-regions.json"
+            command = [
+                sys.executable,
+                "-m",
+                "accessible_caption_studio.whisper_worker",
+                "--vad-only",
+                str(audio_path),
+                str(self.model_dir / "whisper"),
+                str(output_path),
+            ]
+            reporter = progress or getattr(self, "_progress", None)
+            runner = getattr(reporter, "run_process", None)
+            process = runner(command) if runner else subprocess.run(
+                command, capture_output=True, text=True, check=False
+            )
+            if process.returncode or not output_path.is_file():
+                return []
+            try:
+                return [
+                    (float(item["start"]), float(item["end"]))
+                    for item in json.loads(output_path.read_text(encoding="utf-8"))
+                    if float(item["end"]) > float(item["start"])
+                ]
+            except (OSError, ValueError, KeyError):
+                return []
+
     def recover_transcription(
         self,
         audio_path: Path,
@@ -145,8 +180,14 @@ class LocalAnalyzer:
         progress: ProgressCallback | None = None,
         camera_cuts: list[float] | None = None,
     ) -> tuple[list[WordToken], dict[str, object]]:
+        speech_regions = self.detect_speech_regions(audio_path, progress)
         try:
-            regions = detect_recovery_regions(audio_path, words, camera_cuts)
+            regions = detect_recovery_regions(
+                audio_path,
+                words,
+                camera_cuts,
+                speech_regions=speech_regions,
+            )
         except (OSError, EOFError, wave.Error):
             regions = []
         empty: dict[str, object] = {
@@ -170,14 +211,7 @@ class LocalAnalyzer:
             intervals_path = Path(temporary_dir) / "recovery-intervals.json"
             interval_payload = []
             for start, end in regions:
-                context = " ".join(
-                    word.text
-                    for word in words
-                    if word.start < end + 1.0 and word.end > start - 1.0
-                )
-                interval_payload.append(
-                    {"start": start, "end": end, "prompt": context[:500]}
-                )
+                interval_payload.append({"start": start, "end": end})
             intervals_path.write_text(
                 json.dumps(interval_payload), encoding="utf-8"
             )
@@ -185,6 +219,8 @@ class LocalAnalyzer:
                 sys.executable,
                 "-m",
                 "accessible_caption_studio.whisper_worker",
+                "--model",
+                "small.en" if self.transcription_quality == "fast" else "distil-large-v3",
                 str(audio_path),
                 str(whisper_dir),
                 str(output_path),

@@ -11,7 +11,8 @@ workflow, and production-ready exports in one portfolio application.
 
 - Imports MP4, MOV, WebM, MP3, WAV, and M4A files
 - Imports individual YouTube videos when you have permission to download them
-- Transcribes English speech and singing locally with Whisper word timestamps
+- Transcribes English speech and singing locally with selectable Fast or Accurate Whisper
+  word timestamps
 - Adaptively rechecks suspicious speech gaps so legitimate repeated dialogue is preserved
 - Labels voices anonymously as `Speaker 1`, `Speaker 2`, and so on
 - Uses anonymous face tracks and audio-correlated mouth activity to stabilize video speakers
@@ -68,12 +69,13 @@ temporary crops and embeddings are deleted. **Show active speaker** in Settings 
 optional player outline. **Rename speakers** adds user-provided display names to captions
 and exports.
 
-After the primary Whisper pass, the studio locally rechecks short energetic gaps,
-low-confidence passages, and rapid visual transitions. Recovery uses the same cached
-`small.en` model with fresh local context. Results are reconciled by audio timestamp—not
-by text alone—so the same phrase spoken twice remains two utterances. Existing projects
-can run the same process through **Improve transcription**, which presents a preview and
-preserves edited captions for review.
+Accurate mode uses the public, token-free `distil-large-v3` model; Fast mode retains
+`small.en`. The selected default is stored locally in Settings. After the primary pass,
+Silero speech detection independently maps likely speech and the studio retranscribes
+uncovered intervals, long gaps, and low-confidence passages without previous-text prompts.
+Results are reconciled by audio timestamp—not by text alone—so the same phrase spoken twice
+remains two utterances. Existing projects can run the same process through **Improve
+transcription**, which presents a preview and preserves edited captions for review.
 Intel Macs use the final compatible prebuilt OpenCV 4.10 wheel so setup does not attempt a
 large, unreliable source compilation.
 
@@ -162,7 +164,7 @@ FFprobe validation → private project folder
         ↓
 FFmpeg 16 kHz mono analysis audio
         ↓
-Whisper primary words → adaptive timestamp-aware recovery
+Whisper primary words → Silero speech coverage → adaptive timestamp-aware recovery
                ├─ ECAPA voice clusters
                ├─ YuNet + SFace identities + camera cuts
                ├─ word-level hybrid speaker fusion

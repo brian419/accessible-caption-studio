@@ -159,6 +159,11 @@
         <label class="theme-setting" for="activeSpeakerSetting"><span><strong>Show active speaker</strong><small>Outline the anonymously tracked speaking face in the video preview.</small></span><input id="activeSpeakerSetting" type="checkbox" role="switch"></label>
       </section>
       <section>
+        <h3>Transcription accuracy</h3>
+        <label class="quality-setting" for="transcriptionQualitySetting"><span><strong>Default quality for new projects</strong><small>Accurate uses the free local Distil-Whisper Large v3 model. Fast uses the smaller model.</small></span><select id="transcriptionQualitySetting"><option value="accurate">Accurate</option><option value="fast">Fast</option></select></label>
+        <p class="field-note">Accurate mode takes longer and downloads a larger model the first time. Media and transcription stay on this Mac.</p>
+      </section>
+      <section>
         <h3>Speaker labeling</h3>
         <p>The studio combines public ECAPA voice embeddings with anonymous YuNet/SFace matching across camera cuts. Face crops and embeddings are temporary, stay on this Mac, and are deleted after analysis. No account or token is required.</p>
         <p id="speakerModelStatus" class="field-note" role="status">Token-free local speaker labeling is enabled.</p>

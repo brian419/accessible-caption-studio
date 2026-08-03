@@ -51,7 +51,8 @@ def test_youtube_bot_challenge_has_clear_retry_error(
 
 
 def test_youtube_cookie_browser_is_validated() -> None:
-    assert YouTubeRequest(url="https://youtu.be/example", cookie_browser="brave")
+    request = YouTubeRequest(url="https://youtu.be/example", cookie_browser="brave")
+    assert request.transcription_quality == "accurate"
     assert YouTubeRequest(url="https://youtu.be/example", cookie_browser="safari")
     with pytest.raises(ValueError):
         YouTubeRequest(url="https://youtu.be/example", cookie_browser="unknown")

@@ -214,3 +214,42 @@ def test_one_frame_face_flicker_cannot_override_voice() -> None:
     )
     assert fused[0].speaker == "Speaker 1"
     assert fused[0].method == "voice_only"
+
+
+def test_visible_reaction_face_does_not_override_strong_voice() -> None:
+    words = [
+        WordToken(text="Hello.", start=0, end=0.6, confidence=0.9),
+        WordToken(text="Still", start=1, end=1.3, confidence=0.9),
+        WordToken(text="talking.", start=1.3, end=1.7, confidence=0.9),
+    ]
+    turns = [
+        SpeakerTurn(speaker="Speaker 1", start=0, end=1.7, confidence=0.92),
+    ]
+    tracks = [
+        {
+            "id": "speaker-face",
+            "identity_cluster_id": "Face identity 1",
+            "samples": [
+                {"time": 0.1, "active_confidence": 0.92},
+                {"time": 0.5, "active_confidence": 0.9},
+            ],
+        },
+        {
+            "id": "reaction-face",
+            "identity_cluster_id": "Face identity 2",
+            "samples": [
+                {"time": 1.05, "active_confidence": 0.7},
+                {"time": 1.45, "active_confidence": 0.7},
+            ],
+        },
+    ]
+    fused, _summaries, _summary = fuse_speaker_evidence(
+        turns,
+        tracks,
+        expected_speaker_count=2,
+        voice_cluster_count=1,
+        words=words,
+    )
+    assert {turn.speaker for turn in fused} == {"Speaker 1"}
+    assert words[-1].speaker == "Speaker 1"
+    assert words[-1].speaker_method == "voice_only"

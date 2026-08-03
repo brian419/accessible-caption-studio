@@ -181,6 +181,7 @@ class Project(BaseModel):
     face_tracks: list[FaceTrackSummary] = Field(default_factory=list)
     speaker_engine: str = "legacy_wavlm"
     fusion_summary: FusionSummary = Field(default_factory=FusionSummary)
+    transcription_quality: str = Field(default="accurate", pattern="^(fast|accurate)$")
 
     @field_validator("speaker_names")
     @classmethod
