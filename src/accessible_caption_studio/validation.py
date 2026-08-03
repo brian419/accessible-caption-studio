@@ -6,6 +6,67 @@ from .models import CaptionCue, Severity, ValidationFinding
 def validate_cues(cues: list[CaptionCue], duration: float | None = None) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     ordered = sorted(cues, key=lambda cue: (cue.start, cue.end))
+    overlap_groups: dict[str, list[CaptionCue]] = {}
+    for cue in ordered:
+        if cue.overlap_group_id:
+            overlap_groups.setdefault(cue.overlap_group_id, []).append(cue)
+    for grouped in overlap_groups.values():
+        if len(grouped) < 2:
+            findings.append(
+                _finding(
+                    "overlap_incomplete",
+                    "A simultaneous caption needs two speaker lines.",
+                    grouped[0],
+                )
+            )
+        if len(grouped) > 2:
+            findings.append(
+                _finding(
+                    "overlap_speaker_count",
+                    "Simultaneous captions support at most two speakers.",
+                    grouped[0],
+                    True,
+                )
+            )
+        if any(not cue.speaker for cue in grouped):
+            findings.append(
+                _finding(
+                    "overlap_missing_speaker",
+                    "Each simultaneous caption needs a speaker label.",
+                    grouped[0],
+                )
+            )
+        speakers = [cue.speaker for cue in grouped if cue.speaker]
+        if len(speakers) > 1 and len(set(speakers)) != len(speakers):
+            findings.append(
+                _finding(
+                    "overlap_duplicate_speaker",
+                    "Simultaneous lines should use different speaker labels.",
+                    grouped[0],
+                )
+            )
+        if any(
+            abs(cue.start - grouped[0].start) > 0.05 or abs(cue.end - grouped[0].end) > 0.05
+            for cue in grouped[1:]
+        ):
+            findings.append(
+                _finding(
+                    "overlap_timing_mismatch",
+                    "Simultaneous captions must share the same in and out times.",
+                    grouped[0],
+                    True,
+                )
+            )
+        group_duration = grouped[0].end - grouped[0].start
+        group_characters = sum(len(cue.text.replace("\n", "")) for cue in grouped)
+        if group_duration > 0 and group_characters / group_duration > 20:
+            findings.append(
+                _finding(
+                    "overlap_reading_speed",
+                    "Combined simultaneous speech exceeds 20 characters per second.",
+                    grouped[0],
+                )
+            )
     for index, cue in enumerate(ordered):
         cue_duration = cue.end - cue.start
         lines = cue.text.splitlines() or [cue.text]
@@ -33,12 +94,26 @@ def validate_cues(cues: list[CaptionCue], duration: float | None = None) -> list
             findings.append(
                 _finding("outside_media", "Caption extends beyond the media duration.", cue, True)
             )
-        if index and cue.start < ordered[index - 1].end:
+        previous = ordered[index - 1] if index else None
+        intentional_overlap = bool(
+            previous
+            and cue.overlap_group_id
+            and cue.overlap_group_id == previous.overlap_group_id
+        )
+        if previous and cue.start < previous.end and not intentional_overlap:
             findings.append(
                 _finding("overlap", "Caption overlaps the previous caption.", cue, True)
             )
     if duration and ordered:
-        speech_coverage = sum(max(0, cue.end - cue.start) for cue in ordered)
+        intervals = sorted({(cue.start, cue.end) for cue in ordered})
+        speech_coverage = 0.0
+        coverage_end = 0.0
+        for start, end in intervals:
+            if start >= coverage_end:
+                speech_coverage += max(0, end - start)
+            elif end > coverage_end:
+                speech_coverage += end - coverage_end
+            coverage_end = max(coverage_end, end)
         if speech_coverage / duration < 0.1:
             findings.append(
                 ValidationFinding(

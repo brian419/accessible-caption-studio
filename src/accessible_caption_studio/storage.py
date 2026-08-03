@@ -82,6 +82,9 @@ class ProjectStore:
         audio = self.project_dir(source.id) / "analysis.wav"
         if audio.is_file():
             shutil.copy2(audio, target_dir / audio.name)
+        evidence = self.project_dir(source.id) / "speaker-evidence.json"
+        if evidence.is_file():
+            shutil.copy2(evidence, target_dir / evidence.name)
         return self.save(duplicate)
 
     def project_dir(self, project_id: str) -> Path:

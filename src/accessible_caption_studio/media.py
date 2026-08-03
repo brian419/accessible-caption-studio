@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from .errors import StudioError
@@ -54,11 +55,10 @@ def inspect_media(path: Path, *, source_url: str | None = None) -> MediaAsset:
     )
 
 
-def extract_audio(source: Path, destination: Path) -> None:
+def extract_audio(source: Path, destination: Path, job_context: object | None = None) -> None:
     require_tools()
     partial = destination.with_suffix(".partial.wav")
-    process = subprocess.run(
-        [
+    command = [
             "ffmpeg",
             "-y",
             "-i",
@@ -71,10 +71,10 @@ def extract_audio(source: Path, destination: Path) -> None:
             "-c:a",
             "pcm_s16le",
             str(partial),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+        ]
+    runner = getattr(job_context, "run_process", None)
+    process = runner(command) if runner else subprocess.run(
+        command, capture_output=True, text=True, check=False
     )
     if process.returncode:
         partial.unlink(missing_ok=True)
@@ -82,29 +82,41 @@ def extract_audio(source: Path, destination: Path) -> None:
     partial.replace(destination)
 
 
-def download_youtube(url: str, destination_dir: Path) -> tuple[Path, str]:
+def download_youtube(
+    url: str, destination_dir: Path, job_context: object | None = None
+) -> tuple[Path, str]:
     if not url.startswith(
         ("https://www.youtube.com/", "https://youtube.com/", "https://youtu.be/")
     ):
         raise StudioError("invalid_url", "Enter a complete YouTube video URL.")
-    try:
-        import yt_dlp
-    except ImportError as exc:
-        raise StudioError("missing_downloader", "yt-dlp is not installed.") from exc
     template = str(destination_dir / "source.%(ext)s")
-    options = {
-        "outtmpl": template,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "format": "bv*+ba/b",
-        "merge_output_format": "mp4",
-        "restrictfilenames": True,
-    }
+    command = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "--no-playlist",
+        "--quiet",
+        "--no-warnings",
+        "--restrict-filenames",
+        "-f",
+        "bv*+ba/b",
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        template,
+        "--print",
+        "after_move:%(title)s",
+        url,
+    ]
     try:
-        with yt_dlp.YoutubeDL(options) as downloader:
-            info = downloader.extract_info(url, download=True)
-            title = str(info.get("title") or "YouTube video")
+        runner = getattr(job_context, "run_process", None)
+        process = runner(command) if runner else subprocess.run(
+            command, capture_output=True, text=True, check=False
+        )
+        if process.returncode:
+            raise RuntimeError((process.stderr or process.stdout or "download failed")[-900:])
+        lines = [line.strip() for line in (process.stdout or "").splitlines() if line.strip()]
+        title = lines[-1] if lines else "YouTube video"
     except Exception as exc:
         raise StudioError("youtube_download_failed", f"YouTube download failed: {exc}") from exc
     candidates = [path for path in destination_dir.glob("source.*") if path.suffix != ".part"]

@@ -5,6 +5,13 @@ const state = {
   activeJob: null,
   pollTimer: null,
   saveTimer: null,
+  overlapProposal: null,
+  speakerProposal: null,
+  speakerProposalJobId: null,
+  transcriptProposal: null,
+  transcriptProposalJobId: null,
+  speakerEvidence: [],
+  evidenceWindow: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -13,11 +20,13 @@ const workspaceView = $("#workspaceView");
 const mediaPlayer = $("#mediaPlayer");
 const audioPlayer = $("#audioPlayer");
 const themeStorageKey = "accessible-caption-theme";
+const activeSpeakerStorageKey = "accessible-caption-active-speaker";
 
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   applyTheme(document.documentElement.dataset.theme || "light", false);
+  try { $("#activeSpeakerSetting").checked = localStorage.getItem(activeSpeakerStorageKey) === "true"; } catch (_) {}
   bindEvents();
   await loadProjects();
 }
@@ -34,6 +43,7 @@ function bindEvents() {
   bindDropZone();
   $("#settingsButton").addEventListener("click", openSettings);
   $("#darkModeSetting").addEventListener("change", (event) => applyTheme(event.target.checked ? "dark" : "light"));
+  $("#activeSpeakerSetting").addEventListener("change", toggleActiveSpeaker);
   $("#clearModels").addEventListener("click", () => clearStorage("models"));
   $("#clearTemporary").addEventListener("click", () => clearStorage("temporary"));
   $("#projectTitle").addEventListener("input", scheduleSave);
@@ -45,8 +55,29 @@ function bindEvents() {
     button.addEventListener("click", () => createExport(button.dataset.export))
   );
   $("#addCueButton").addEventListener("click", addCue);
+  $("#improveTranscriptButton").addEventListener("click", improveTranscript);
+  $("#redetectSpeakersButton").addEventListener("click", openSpeakerSetup);
+  $("#renameSpeakersButton").addEventListener("click", openRenameSpeakers);
+  $("#renameSpeakersForm").addEventListener("submit", saveSpeakerNames);
+  $("#closeRenameSpeakers").addEventListener("click", () => $("#renameSpeakersDialog").close());
+  $("#cancelRenameSpeakers").addEventListener("click", () => $("#renameSpeakersDialog").close());
+  $("#speakerSetupForm").addEventListener("submit", startSpeakerReanalysis);
+  document.querySelectorAll('input[name="speakerCountMode"]').forEach((input) =>
+    input.addEventListener("change", updateSpeakerCountMode)
+  );
+  $("#closeSpeakerSetup").addEventListener("click", () => $("#speakerSetupDialog").close());
+  $("#cancelSpeakerSetup").addEventListener("click", () => $("#speakerSetupDialog").close());
+  $("#applySpeakerProposal").addEventListener("click", applySpeakerProposal);
+  $("#discardSpeakerProposal").addEventListener("click", discardSpeakerProposal);
+  $("#discardSpeakerProposalTop").addEventListener("click", discardSpeakerProposal);
+  $("#applyTranscriptProposal").addEventListener("click", applyTranscriptProposal);
+  $("#discardTranscriptProposal").addEventListener("click", discardTranscriptProposal);
+  $("#discardTranscriptProposalTop").addEventListener("click", discardTranscriptProposal);
   $("#undoButton").addEventListener("click", undo);
   $("#cancelJob").addEventListener("click", cancelJob);
+  $("#applyOverlap").addEventListener("click", applyOverlapProposal);
+  $("#discardOverlap").addEventListener("click", discardOverlapProposal);
+  $("#discardOverlapTop").addEventListener("click", discardOverlapProposal);
   [mediaPlayer, audioPlayer].forEach((player) => player.addEventListener("timeupdate", syncPlayback));
   document.addEventListener("keydown", playbackKeys);
 }
@@ -215,7 +246,7 @@ async function openProject(id) {
     showWorkspace();
     if (state.project.latest_job_id) {
       const job = await api(`/api/projects/${id}/jobs/${state.project.latest_job_id}`);
-      if (["queued", "running"].includes(job.state)) monitorJob(job);
+      if (["queued", "running", "cancelling"].includes(job.state)) monitorJob(job);
     }
   } catch (error) {
     toast(error.message);
@@ -261,6 +292,9 @@ function renderProject() {
   renderFindings();
   renderSummary();
   renderExportResults();
+  state.speakerEvidence = [];
+  state.evidenceWindow = null;
+  $("#renameSpeakersButton").disabled = !project.cues.some((cue) => cue.speaker);
 }
 
 function renderCues() {
@@ -273,6 +307,13 @@ function renderCues() {
     row.className = `cue-row${flagged.has(cue.id) ? " flagged" : ""}`;
     row.dataset.cueId = cue.id;
     row.id = `cue-${cue.id}`;
+    if (cue.overlap_group_id) {
+      row.classList.add("simultaneous");
+      const badge = document.createElement("span");
+      badge.className = "simultaneous-badge";
+      badge.textContent = "Simultaneous speech";
+      row.append(badge);
+    }
 
     const times = document.createElement("div");
     times.className = "time-inputs";
@@ -295,7 +336,20 @@ function renderCues() {
     const confidence = document.createElement("span");
     confidence.className = `confidence${cue.confidence !== null && cue.confidence < .7 ? " low" : ""}`;
     confidence.textContent = cue.confidence === null ? humanSource(cue.source) : `${Math.round(cue.confidence * 100)}% confidence`;
-    meta.append(speaker, confidence);
+    const turn = bestSpeakerTurn(cue);
+    const evidence = document.createElement("span");
+    evidence.className = "evidence-badge";
+    evidence.textContent = ({
+      voice_face: "Voice + face",
+      voice_only: "Voice only",
+      face_only: "Face only",
+      uncertain: "Uncertain",
+      audio_visual: "Voice + face",
+      visual_fallback: "Face only",
+    })[turn?.method] || "Voice only";
+    const display = state.project.speaker_names?.[cue.speaker];
+    if (display) speaker.title = `Displayed as ${display}`;
+    meta.append(speaker, confidence, evidence);
 
     const menu = document.createElement("button");
     menu.type = "button";
@@ -308,7 +362,11 @@ function renderCues() {
     actions.className = "cue-actions";
     actions.append(
       actionButton("Split", () => splitCue(index)),
-      actionButton("Merge next", () => mergeCue(index), index === state.project.cues.length - 1),
+      actionButton("Merge next", () => mergeCue(index), index === state.project.cues.length - 1 || Boolean(cue.overlap_group_id)),
+      cue.overlap_group_id
+        ? actionButton("Ungroup simultaneous", () => ungroupCue(index))
+        : actionButton("Group with next", () => groupWithNext(index), index === state.project.cues.length - 1),
+      actionButton("Analyze overlapping voices", () => analyzeOverlap(index)),
       actionButton("Move up", () => moveCue(index, -1), index === 0),
       actionButton("Move down", () => moveCue(index, 1), index === state.project.cues.length - 1),
     );
@@ -362,7 +420,7 @@ function addCue() {
   remember();
   const player = activePlayer();
   const start = player.currentTime || 0;
-  state.project.cues.push({ id: crypto.randomUUID().replaceAll("-", ""), start, end: Math.min(start + 2, state.project.media?.duration || start + 2), text: "New caption", speaker: null, source: "manual", confidence: null, sound_event_id: null });
+  state.project.cues.push({ id: crypto.randomUUID().replaceAll("-", ""), start, end: Math.min(start + 2, state.project.media?.duration || start + 2), text: "New caption", speaker: null, source: "manual", confidence: null, sound_event_id: null, overlap_group_id: null });
   state.project.cues.sort((a, b) => a.start - b.start);
   renderCues();
   scheduleSave();
@@ -373,6 +431,96 @@ function deleteCue(index) {
   state.project.cues.splice(index, 1);
   renderCues();
   scheduleSave();
+}
+
+function groupWithNext(index) {
+  const cue = state.project.cues[index];
+  const next = state.project.cues[index + 1];
+  if (!cue || !next) return;
+  remember();
+  const group = crypto.randomUUID().replaceAll("-", "");
+  const start = Math.min(cue.start, next.start);
+  const end = Math.max(cue.end, next.end);
+  [cue, next].forEach((item) => {
+    item.start = start;
+    item.end = end;
+    item.overlap_group_id = group;
+    item.source = "manual";
+  });
+  renderCues();
+  scheduleSave();
+}
+
+function ungroupCue(index) {
+  const group = state.project.cues[index]?.overlap_group_id;
+  if (!group) return;
+  remember();
+  state.project.cues.forEach((cue) => {
+    if (cue.overlap_group_id === group) cue.overlap_group_id = null;
+  });
+  renderCues();
+  scheduleSave();
+}
+
+async function analyzeOverlap(index) {
+  const cue = state.project.cues[index];
+  if (!cue) return;
+  try {
+    await saveProject();
+    const job = await api(`/api/projects/${state.project.id}/analyze-overlap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: cue.start, end: cue.end }),
+    });
+    monitorJob(job);
+  } catch (error) { toast(error.message); }
+}
+
+function showOverlapProposal(result) {
+  state.overlapProposal = result;
+  const container = $("#overlapProposal");
+  container.replaceChildren();
+  result.cues.forEach((cue, index) => {
+    const item = document.createElement("section");
+    const heading = document.createElement("strong");
+    heading.textContent = `Voice ${index + 1}`;
+    const speaker = document.createElement("input");
+    speaker.setAttribute("aria-label", `Proposed voice ${index + 1} speaker`);
+    speaker.value = cue.speaker || `Speaker ${index + 1}`;
+    speaker.addEventListener("input", () => { cue.speaker = speaker.value; });
+    const text = document.createElement("textarea");
+    text.setAttribute("aria-label", `Proposed voice ${index + 1} caption text`);
+    text.value = cue.text;
+    text.addEventListener("input", () => { cue.text = text.value; });
+    item.append(heading, speaker, text);
+    container.append(item);
+  });
+  $("#overlapDialog").showModal();
+}
+
+async function applyOverlapProposal() {
+  const result = state.overlapProposal;
+  if (!result) return;
+  if (result.cues.some((cue) => !cue.speaker?.trim() || !cue.text?.trim())) {
+    toast("Both proposed lines need a speaker and caption text.");
+    return;
+  }
+  remember();
+  const replaced = new Set(result.replace_cue_ids || []);
+  state.project.cues = state.project.cues.filter((cue) => !replaced.has(cue.id));
+  state.project.cues.push(...result.cues);
+  state.project.cues.sort((left, right) => left.start - right.start || left.end - right.end);
+  $("#overlapDialog").close();
+  state.overlapProposal = null;
+  renderCues();
+  await saveProject();
+  toast("Two simultaneous speaker lines applied.");
+}
+
+function discardOverlapProposal() {
+  state.overlapProposal = null;
+  $("#overlapDialog").close();
+  toast("Overlap proposal discarded. Original captions were not changed.");
 }
 
 function splitCue(index) {
@@ -386,6 +534,8 @@ function splitCue(index) {
   cue.end = middle;
   cue.text = words.slice(0, split).join(" ");
   cue.source = "manual";
+  cue.overlap_group_id = null;
+  second.overlap_group_id = null;
   state.project.cues.splice(index + 1, 0, second);
   renderCues();
   scheduleSave();
@@ -435,7 +585,7 @@ async function saveProject() {
     state.project = await api(`/api/projects/${state.project.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: $("#projectTitle").value, cues: state.project.cues }),
+      body: JSON.stringify({ name: $("#projectTitle").value, cues: state.project.cues, speaker_names: state.project.speaker_names || {} }),
     });
     $("#saveStatus").textContent = "Saved";
     renderFindings();
@@ -469,6 +619,202 @@ async function runAnalysis() {
   } finally {
     $("#analyzeButton").disabled = false;
   }
+}
+
+function openSpeakerSetup() {
+  if (!state.project?.words?.length) {
+    toast("Run automatic caption analysis before re-detecting speakers.");
+    return;
+  }
+  const exact = state.project.expected_speaker_count;
+  const mode = exact ? "exact" : "auto";
+  const radio = document.querySelector(`input[name="speakerCountMode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+  $("#exactSpeakerCount").value = exact || 2;
+  updateSpeakerCountMode();
+  $("#speakerSetupDialog").showModal();
+}
+
+function updateSpeakerCountMode() {
+  const mode = document.querySelector('input[name="speakerCountMode"]:checked')?.value;
+  $("#exactSpeakerCount").disabled = mode !== "exact";
+}
+
+async function startSpeakerReanalysis(event) {
+  event.preventDefault();
+  const mode = document.querySelector('input[name="speakerCountMode"]:checked')?.value;
+  const exact = Number($("#exactSpeakerCount").value);
+  if (mode === "exact" && (!Number.isInteger(exact) || exact < 1 || exact > 8)) {
+    toast("Choose an exact speaker count from 1 to 8.");
+    return;
+  }
+  try {
+    await saveProject();
+    const job = await api(`/api/projects/${state.project.id}/reanalyze-speakers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_speaker_count: mode === "exact" ? exact : null }),
+    });
+    $("#speakerSetupDialog").close();
+    monitorJob(job);
+  } catch (error) { toast(error.message); }
+}
+
+function showSpeakerProposal(result, jobId) {
+  state.speakerProposal = result;
+  state.speakerProposalJobId = jobId;
+  const summary = result.change_summary || {};
+  const fusion = result.fusion_summary || {};
+  const nameWarning = result.name_review_warnings?.length
+    ? ` ${result.name_review_warnings.join(" ")}`
+    : "";
+  $("#speakerProposalSummary").textContent = `${result.detected_count} ${result.detected_count === 1 ? "speaker was" : "speakers were"} detected from ${fusion.voice_cluster_count || 0} voice clusters and ${fusion.face_identity_count || 0} recurring speaking faces. Your saved captions remain unchanged until you apply this preview.${nameWarning}`;
+  const stats = $("#speakerChangeStats");
+  stats.replaceChildren();
+  [
+    ["Voice clusters", fusion.voice_cluster_count || 0],
+    ["Face identities", fusion.face_identity_count || 0],
+    ["Final speakers", fusion.final_speaker_count || result.detected_count || 0],
+    ["Label changes", summary.label_changes || 0],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    const strong = document.createElement("strong");
+    const span = document.createElement("span");
+    strong.textContent = value;
+    span.textContent = label;
+    item.append(strong, span);
+    stats.append(item);
+  });
+
+  const list = $("#speakerProposalList");
+  list.replaceChildren();
+  const originals = new Map(state.project.cues.map((cue) => [cue.id, cue]));
+  const changed = result.cues.filter((cue) => {
+    const original = originals.get(cue.id);
+    return !original || original.speaker !== cue.speaker || original.text !== cue.text
+      || original.start !== cue.start || original.end !== cue.end;
+  });
+  (changed.length ? changed : result.cues.slice(0, 8)).slice(0, 100).forEach((cue) => {
+    const original = originals.get(cue.id);
+    const row = document.createElement("article");
+    const time = document.createElement("span");
+    const before = document.createElement("p");
+    const after = document.createElement("p");
+    time.textContent = `${Number(cue.start).toFixed(3)}–${Number(cue.end).toFixed(3)}`;
+    before.textContent = original
+      ? `Before: ${original.speaker || "No speaker"}: ${original.text}`
+      : "Before: New split caption";
+    after.textContent = `After: ${cue.speaker || "No speaker"}: ${cue.text}`;
+    row.append(time, before, after);
+    list.append(row);
+  });
+  if (changed.length > 100) {
+    const note = document.createElement("p");
+    note.textContent = `${changed.length - 100} additional changes are included.`;
+    list.append(note);
+  }
+  $("#speakerProposalDialog").showModal();
+}
+
+async function applySpeakerProposal() {
+  if (!state.speakerProposalJobId) return;
+  try {
+    remember();
+    state.project = await api(`/api/projects/${state.project.id}/speaker-proposals/${state.speakerProposalJobId}/apply`, { method: "POST" });
+    $("#speakerProposalDialog").close();
+    state.speakerProposal = null;
+    state.speakerProposalJobId = null;
+    renderProject();
+    toast("Speaker changes applied and saved.");
+  } catch (error) { toast(error.message); }
+}
+
+function discardSpeakerProposal() {
+  state.speakerProposal = null;
+  state.speakerProposalJobId = null;
+  $("#speakerProposalDialog").close();
+  toast("Speaker preview discarded. Saved captions were not changed.");
+}
+
+async function improveTranscript() {
+  if (!state.project?.words?.length) {
+    toast("Run automatic caption analysis before improving the transcript.");
+    return;
+  }
+  try {
+    await saveProject();
+    const job = await api(`/api/projects/${state.project.id}/repair-transcript`, {
+      method: "POST",
+    });
+    monitorJob(job);
+  } catch (error) { toast(error.message); }
+}
+
+function showTranscriptProposal(result, jobId) {
+  state.transcriptProposal = result;
+  state.transcriptProposalJobId = jobId;
+  const recovery = result.recovery_summary || {};
+  const conflicts = result.edit_conflicts || [];
+  $("#transcriptProposalSummary").textContent = `${recovery.inserted || 0} missing words recovered and ${recovery.replaced || 0} low-confidence words improved across ${(recovery.regions || []).length} regions. ${conflicts.length ? `${conflicts.length} edited captions were preserved for review.` : "Saved captions remain unchanged until you apply this preview."}`;
+  const stats = $("#transcriptChangeStats");
+  stats.replaceChildren();
+  [
+    ["Recovered words", recovery.inserted || 0],
+    ["Improved words", recovery.replaced || 0],
+    ["Checked regions", (recovery.regions || []).length],
+    ["Edit conflicts", conflicts.length],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    const strong = document.createElement("strong");
+    const span = document.createElement("span");
+    strong.textContent = value;
+    span.textContent = label;
+    item.append(strong, span);
+    stats.append(item);
+  });
+  const list = $("#transcriptProposalList");
+  list.replaceChildren();
+  const originals = new Map(state.project.cues.map((cue) => [cue.id, cue]));
+  const changed = result.cues.filter((cue) => {
+    const original = originals.get(cue.id);
+    return !original || original.speaker !== cue.speaker || original.text !== cue.text
+      || original.start !== cue.start || original.end !== cue.end;
+  });
+  (changed.length ? changed : result.cues.slice(0, 8)).slice(0, 100).forEach((cue) => {
+    const original = originals.get(cue.id);
+    const row = document.createElement("article");
+    const time = document.createElement("span");
+    const before = document.createElement("p");
+    const after = document.createElement("p");
+    time.textContent = `${Number(cue.start).toFixed(3)}–${Number(cue.end).toFixed(3)}`;
+    before.textContent = original
+      ? `Before: ${original.speaker || "No speaker"}: ${original.text}`
+      : "Before: Missing dialogue";
+    after.textContent = `After: ${cue.speaker || "No speaker"}: ${cue.text}`;
+    row.append(time, before, after);
+    list.append(row);
+  });
+  $("#transcriptProposalDialog").showModal();
+}
+
+async function applyTranscriptProposal() {
+  if (!state.transcriptProposalJobId) return;
+  try {
+    remember();
+    state.project = await api(`/api/projects/${state.project.id}/transcript-proposals/${state.transcriptProposalJobId}/apply`, { method: "POST" });
+    $("#transcriptProposalDialog").close();
+    state.transcriptProposal = null;
+    state.transcriptProposalJobId = null;
+    renderProject();
+    toast("Recovered dialogue and speaker changes applied and saved.");
+  } catch (error) { toast(error.message); }
+}
+
+function discardTranscriptProposal() {
+  state.transcriptProposal = null;
+  state.transcriptProposalJobId = null;
+  $("#transcriptProposalDialog").close();
+  toast("Transcript preview discarded. Saved captions were not changed.");
 }
 
 function renderFindings() {
@@ -537,15 +883,29 @@ function focusCue(id) {
 }
 
 function activePlayer() { return state.project?.media?.has_video ? mediaPlayer : audioPlayer; }
+function displaySpeaker(speaker) { return state.project?.speaker_names?.[speaker] || speaker; }
+function bestSpeakerTurn(cue) {
+  return (state.project?.speakers || []).reduce((best, turn) => {
+    const overlap = Math.max(0, Math.min(cue.end, turn.end) - Math.max(cue.start, turn.start));
+    return overlap > (best?.overlap || 0) ? { ...turn, overlap } : best;
+  }, null);
+}
 function seekTo(seconds) { const player = activePlayer(); if (player?.src) player.currentTime = seconds; }
 
 function syncPlayback() {
   if (!state.project) return;
   const time = activePlayer().currentTime;
-  const active = state.project.cues.find((cue) => time >= cue.start && time < cue.end);
-  $("#captionOverlay").textContent = active ? `${active.speaker ? `${active.speaker}: ` : ""}${active.text}` : "";
+  const active = state.project.cues.filter((cue) => time >= cue.start && time < cue.end);
+  const primary = active[0];
+  const visible = primary?.overlap_group_id
+    ? active.filter((cue) => cue.overlap_group_id === primary.overlap_group_id)
+    : primary ? [primary] : [];
+  $("#captionOverlay").textContent = visible
+    .map((cue) => `${cue.speaker ? `${displaySpeaker(cue.speaker)}: ` : ""}${cue.text}`)
+    .join("\n");
+  updateActiveFace(time);
   document.querySelectorAll(".cue-row.active").forEach((row) => row.classList.remove("active"));
-  if (active) document.querySelector(`[data-cue-id="${CSS.escape(active.id)}"]`)?.classList.add("active");
+  visible.forEach((cue) => document.querySelector(`[data-cue-id="${CSS.escape(cue.id)}"]`)?.classList.add("active"));
 }
 
 function playbackKeys(event) {
@@ -571,7 +931,7 @@ async function pollJob() {
     const job = await api(`/api/projects/${state.project.id}/jobs/${state.activeJob.id}`);
     state.activeJob = job;
     updateJobPanel(job);
-    if (["queued", "running"].includes(job.state)) {
+    if (["queued", "running", "cancelling"].includes(job.state)) {
       state.pollTimer = setTimeout(pollJob, 1100);
       return;
     }
@@ -581,11 +941,19 @@ async function pollJob() {
       if (job.kind === "mp4-export") {
         const artifact = state.project.exports.find((item) => item.format === "mp4");
         if (artifact) showExportComplete(artifact);
+      } else if (job.kind === "overlap-analysis" && job.result) {
+        showOverlapProposal(job.result);
+      } else if (job.kind === "speaker-reanalysis" && job.result) {
+        showSpeakerProposal(job.result, job.id);
+      } else if (job.kind === "transcript-repair" && job.result) {
+        showTranscriptProposal(job.result, job.id);
       } else {
         toast("Automatic captions are ready.");
       }
     } else if (job.state === "failed") {
       toast(job.error || "Processing could not be completed.");
+    } else if (job.state === "cancelled") {
+      toast("Processing cancelled. Saved work was not changed.");
     }
     setTimeout(() => { $("#jobPanel").hidden = true; }, 1800);
   } catch (error) { toast(error.message); }
@@ -597,7 +965,9 @@ function updateJobPanel(job) {
   $("#jobProgress").value = job.progress;
   $("#jobProgress").textContent = `${job.progress}%`;
   $("#jobPercent").textContent = `${job.progress}%`;
-  $("#cancelJob").hidden = !["queued", "running"].includes(job.state);
+  $("#cancelJob").hidden = !["queued", "running", "cancelling"].includes(job.state);
+  $("#cancelJob").disabled = job.state === "cancelling";
+  $("#cancelJob").textContent = job.state === "cancelling" ? "Cancelling…" : "Cancel";
 }
 
 async function cancelJob() {
@@ -605,7 +975,68 @@ async function cancelJob() {
   try {
     state.activeJob = await api(`/api/projects/${state.project.id}/jobs/${state.activeJob.id}/cancel`, { method: "POST" });
     updateJobPanel(state.activeJob);
+    toast("Cancellation requested…");
   } catch (error) { toast(error.message); }
+}
+
+function toggleActiveSpeaker(event) {
+  try { localStorage.setItem(activeSpeakerStorageKey, String(event.target.checked)); } catch (_) {}
+  if (!event.target.checked) $("#activeFaceOverlay").hidden = true;
+  else syncPlayback();
+}
+
+async function updateActiveFace(time) {
+  const overlay = $("#activeFaceOverlay");
+  if (!$("#activeSpeakerSetting").checked || !state.project?.media?.has_video) { overlay.hidden = true; return; }
+  const windowStart = Math.floor(time / 30) * 30;
+  if (state.evidenceWindow !== windowStart) {
+    state.evidenceWindow = windowStart;
+    try {
+      const data = await api(`/api/projects/${state.project.id}/speaker-evidence?start=${windowStart}&end=${windowStart + 30}`);
+      state.speakerEvidence = data.tracks || [];
+    } catch (_) { state.speakerEvidence = []; }
+  }
+  let best = null;
+  state.speakerEvidence.forEach((track) => track.samples.forEach((sample) => {
+    const distance = Math.abs(sample.time - time);
+    if (distance <= .22 && sample.active_confidence >= .35 && (!best || sample.active_confidence > best.sample.active_confidence)) best = { track, sample };
+  }));
+  if (!best) { overlay.hidden = true; return; }
+  overlay.style.left = `${best.sample.x * 100}%`;
+  overlay.style.top = `${best.sample.y * 100}%`;
+  overlay.style.width = `${best.sample.width * 100}%`;
+  overlay.style.height = `${best.sample.height * 100}%`;
+  overlay.querySelector("span").textContent = displaySpeaker(best.track.speaker) || "Possible speaker";
+  overlay.hidden = false;
+}
+
+function openRenameSpeakers() {
+  const speakers = [...new Set(state.project.cues.map((cue) => cue.speaker).filter(Boolean))].sort();
+  const fields = $("#speakerNameFields");
+  fields.replaceChildren();
+  speakers.forEach((speaker) => {
+    const label = document.createElement("label");
+    label.append(document.createTextNode(speaker));
+    const input = document.createElement("input");
+    input.name = speaker;
+    input.maxLength = 80;
+    input.placeholder = `Optional name for ${speaker}`;
+    input.value = state.project.speaker_names?.[speaker] || "";
+    label.append(input);
+    fields.append(label);
+  });
+  $("#renameSpeakersDialog").showModal();
+}
+
+async function saveSpeakerNames(event) {
+  event.preventDefault();
+  const names = {};
+  new FormData(event.currentTarget).forEach((value, key) => { if (String(value).trim()) names[key] = String(value).trim(); });
+  state.project.speaker_names = names;
+  await saveProject();
+  $("#renameSpeakersDialog").close();
+  renderProject();
+  toast("Speaker names saved.");
 }
 
 async function duplicateProject(id) {

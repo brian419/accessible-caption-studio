@@ -17,10 +17,42 @@ def test_srt_and_vtt_round_trip_unicode() -> None:
     assert "01,250 --> 00:00:03,500" in srt
     assert "Speaker 1: Café — hello!" in srt
     assert vtt.startswith("WEBVTT")
-    assert [cue.text for cue in parse_caption_text(vtt)] == [
-        "Speaker 1: Café — hello!",
-        "[door closes]",
+    parsed = parse_caption_text(vtt)
+    assert [cue.text for cue in parsed] == ["Café — hello!", "[door closes]"]
+    assert parsed[0].speaker == "Speaker 1"
+
+
+def test_grouped_speech_exports_as_one_two_voice_caption() -> None:
+    cues = [
+        CaptionCue(start=1, end=3, text="I disagree.", speaker="Speaker 1", overlap_group_id="g"),
+        CaptionCue(
+            start=1,
+            end=3,
+            text="Let me finish.",
+            speaker="Speaker 2",
+            overlap_group_id="g",
+        ),
     ]
+    srt = to_srt(cues)
+    vtt = to_vtt(cues)
+    assert srt.count("-->") == 1
+    assert "Speaker 1: I disagree.\nSpeaker 2: Let me finish." in srt
+    assert "<v Speaker 1>I disagree.</v>" in vtt
+    parsed = parse_caption_text(vtt)
+    assert [cue.speaker for cue in parsed] == ["Speaker 1", "Speaker 2"]
+    assert parsed[0].overlap_group_id == parsed[1].overlap_group_id
+    parsed_srt = parse_caption_text(srt)
+    assert [cue.speaker for cue in parsed_srt] == ["Speaker 1", "Speaker 2"]
+    assert parsed_srt[0].overlap_group_id == parsed_srt[1].overlap_group_id
+
+
+def test_grouped_speech_transcript_preserves_both_speakers() -> None:
+    cues = [
+        CaptionCue(start=0, end=2, text="First", speaker="Speaker 1", overlap_group_id="g"),
+        CaptionCue(start=0, end=2, text="Second", speaker="Speaker 2", overlap_group_id="g"),
+    ]
+    document = to_transcript_html("Overlap", cues)
+    assert "<strong>Speaker 1:</strong> First<br><strong>Speaker 2:</strong> Second" in document
 
 
 def test_parser_rejects_empty_input() -> None:

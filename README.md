@@ -12,7 +12,16 @@ workflow, and production-ready exports in one portfolio application.
 - Imports MP4, MOV, WebM, MP3, WAV, and M4A files
 - Imports individual YouTube videos when you have permission to download them
 - Transcribes English speech and singing locally with Whisper word timestamps
+- Adaptively rechecks suspicious speech gaps so legitimate repeated dialogue is preserved
 - Labels voices anonymously as `Speaker 1`, `Speaker 2`, and so on
+- Uses anonymous face tracks and audio-correlated mouth activity to stabilize video speakers
+- Optionally outlines the active speaker in the local player without saving face images
+- Lets users add local display names while preserving anonymous internal speaker IDs
+- Splits captions automatically when the detected speaker changes
+- Lets you re-detect speakers with conservative Auto mode or an exact count from 1–8
+- Offers a non-destructive Improve transcription preview for existing projects
+- Represents two simultaneous speakers as separately editable lines in one timeframe
+- Offers an on-demand, local two-voice separation pass for short overlapping intervals
 - Suggests SDH-style cues such as `[applause]`, `[door closes]`, and `[music]`
 - Creates readable caption segments instead of dumping a raw transcript
 - Checks timing, overlap, duration, line length, line count, and reading speed
@@ -42,10 +51,41 @@ Double-click **Start Accessible Caption Studio.command** in Finder. The first la
 and installs the application and local ML components. It does not replace the system
 Python. That setup can take several minutes. Later launches open the studio directly.
 
-Anonymous speaker labels use Microsoft's public WavLM speaker-verification model. It
-downloads automatically on first use, requires no account or access token, and is cached
-locally for later offline analysis. Voice samples derived from Whisper timestamps are
-grouped by similarity and assigned order-of-appearance labels such as `Speaker 1`.
+Anonymous speaker labels use SpeechBrain's public ECAPA-TDNN VoxCeleb model. It downloads
+automatically on first use, requires no account or access token, and is cached locally for
+later offline analysis. Clean voice samples derived from Whisper timestamps are grouped
+conservatively and assigned order-of-appearance labels such as `Speaker 1`. Short or
+ambiguous samples may join established voices but cannot create another person.
+
+For video, a separate CPU worker uses pinned OpenCV YuNet and SFace models to detect faces,
+track them in a shot, and anonymously match recurring faces across camera cuts. Mouth
+movement and speech timing decide which recurring face is speaking. That independent face
+signal is reconciled with ECAPA voice clusters, so two alternating faces can correct a voice
+cluster that mistakenly merged them. Offscreen and obscured speakers fall back to audio.
+The app stores only anonymous identity IDs, normalized boxes, timestamps, and confidence;
+temporary crops and embeddings are deleted. **Show active speaker** in Settings controls the
+optional player outline. **Rename speakers** adds user-provided display names to captions
+and exports.
+
+After the primary Whisper pass, the studio locally rechecks short energetic gaps,
+low-confidence passages, and rapid visual transitions. Recovery uses the same cached
+`small.en` model with fresh local context. Results are reconciled by audio timestamp—not
+by text alone—so the same phrase spoken twice remains two utterances. Existing projects
+can run the same process through **Improve transcription**, which presents a preview and
+preserves edited captions for review.
+Intel Macs use the final compatible prebuilt OpenCV 4.10 wheel so setup does not attempt a
+large, unreliable source compilation.
+
+If Auto mode estimates the wrong cast size, choose **Re-detect speakers** in the timeline,
+select **Exact number**, and enter the known number of speakers. The studio reuses the saved
+audio and word timestamps, then shows label changes and proposed caption joins or splits in
+a preview. Nothing changes until you choose **Apply changes**.
+
+Normal analysis uses short word-aligned samples and remains the fast default. If two people
+talk over one another, choose **Analyze overlapping voices** on that caption. The optional
+SpeechBrain SepFormer model separates up to two voice tracks in a maximum 30-second interval
+and presents editable results before changing the project. The first use downloads another
+local model and is intentionally slower on Intel Macs.
 
 ## Developer setup
 
@@ -73,10 +113,12 @@ project management, and text exports remain usable without those optional models
 1. Upload a local media file or paste a YouTube URL.
 2. Leave the tab open while the app extracts audio and runs the three local models.
 3. Preview the generated captions in sync with the media.
-4. Optionally correct uncertain captions, speakers, sounds, or timing.
-5. Select **Check captions** and address useful findings.
-6. Export SRT, VTT, an HTML transcript, or a captioned MP4.
-7. Return to **All projects** at any time; changes save automatically.
+4. If dialogue is missing, use **Improve transcription** and review the recovery preview.
+5. If needed, use **Re-detect speakers** with the known cast size and review the preview.
+6. Optionally correct uncertain captions, speakers, sounds, or timing.
+7. Select **Check captions** and address useful findings.
+8. Export SRT, VTT, an HTML transcript, or a captioned MP4.
+9. Return to **All projects** at any time; changes save automatically.
 
 Captioned-video rendering reports the encoded percentage and processed media time. When
 any export finishes, a completion dialog opens automatically with its filename, project
@@ -84,16 +126,23 @@ storage location, file size, and a Download button. The rendered master remains 
 `storage/projects/<project-id>/exports/`; downloading saves another copy through the
 browser's normal Downloads location.
 
+Cancel immediately changes a running job to **Cancelling**, terminates its active local
+worker process, removes partial output, and finishes as **Cancelled**. Completed project
+data is applied only after its worker exits successfully.
+
 Imported SRT or VTT captions skip automatic analysis and open directly in the editor.
 Choose **Analyze** through the API if you later want to replace them with automatic output.
 
 ## Privacy, accuracy, and limitations
 
-- Whisper, WavLM voice clustering, and the Audio Spectrogram Transformer are probabilistic models.
+- Whisper, ECAPA voice clustering, SFace matching, and the Audio Spectrogram Transformer are probabilistic models.
   They can miss words, confuse speakers, or describe a sound incorrectly.
 - Live singing is decoded across the full audio so music-heavy passages are not discarded,
   but unusual pronunciation and loud accompaniment can still require manual correction.
-- Speaker labels are deliberately anonymous. The app never attempts voice identification.
+- Speaker labels and face tracks are deliberately anonymous. The app never attempts voice
+  or facial identification, and visual evidence requires a sufficiently visible face.
+- Simultaneous-speech separation is limited to two voices and may retain noise or miss words;
+  proposals require user review before they replace existing captions.
 - An automatic check is not certification of WCAG, FCC, ADA, or other legal compliance.
 - Captioned MP4 export is available for video projects, not audio-only projects.
 - YouTube availability can change and some videos cannot legally or technically be
@@ -112,8 +161,13 @@ FFprobe validation → private project folder
         ↓
 FFmpeg 16 kHz mono analysis audio
         ↓
-Whisper words ─┬─ WavLM speaker turns ────┬─ AudioSet sound events
-               └──── caption composition ──┘
+Whisper primary words → adaptive timestamp-aware recovery
+               ├─ ECAPA voice clusters
+               ├─ YuNet + SFace identities + camera cuts
+               ├─ word-level hybrid speaker fusion
+               └─ caption composition + AudioSet sound events
+                              │
+              optional SepFormer overlap review
                               ↓
             editor + accessibility validation
                               ↓

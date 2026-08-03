@@ -96,6 +96,7 @@
             <video id="mediaPlayer" controls preload="metadata"></video>
             <audio id="audioPlayer" controls preload="metadata" hidden></audio>
             <div id="captionOverlay" class="caption-overlay" aria-hidden="true"></div>
+            <div id="activeFaceOverlay" class="active-face-overlay" aria-hidden="true" hidden><span></span></div>
           </div>
           <div class="playback-help"><span><kbd>Space</kbd> Play / pause</span><span><kbd>←</kbd><kbd>→</kbd> Seek 5 seconds</span></div>
           <div class="quality-summary" id="qualitySummary"></div>
@@ -111,6 +112,9 @@
             <div><p class="eyebrow">Timeline editor</p><h2 id="captionsTitle">Captions</h2></div>
             <div class="editor-tools">
               <button id="undoButton" class="icon-button" type="button" disabled>Undo</button>
+              <button id="improveTranscriptButton" class="secondary" type="button">Improve transcription</button>
+              <button id="redetectSpeakersButton" class="secondary" type="button">Re-detect speakers</button>
+              <button id="renameSpeakersButton" class="secondary" type="button">Rename speakers</button>
               <button id="addCueButton" class="secondary" type="button">+ Add caption</button>
             </div>
           </div>
@@ -128,10 +132,11 @@
       <section>
         <h3>Appearance</h3>
         <label class="theme-setting" for="darkModeSetting"><span><strong>Dark mode</strong><small>Use a darker color palette throughout the studio.</small></span><input id="darkModeSetting" type="checkbox" role="switch"></label>
+        <label class="theme-setting" for="activeSpeakerSetting"><span><strong>Show active speaker</strong><small>Outline the anonymously tracked speaking face in the video preview.</small></span><input id="activeSpeakerSetting" type="checkbox" role="switch"></label>
       </section>
       <section>
         <h3>Speaker labeling</h3>
-        <p>The studio uses a public Microsoft WavLM voice model to assign anonymous labels such as <strong>Speaker 1</strong>. No account, token, organization, website, or consent form is required. The model downloads on first use and then runs privately on this Mac.</p>
+        <p>The studio combines public ECAPA voice embeddings with anonymous YuNet/SFace matching across camera cuts. Face crops and embeddings are temporary, stay on this Mac, and are deleted after analysis. No account or token is required.</p>
         <p id="speakerModelStatus" class="field-note" role="status">Token-free local speaker labeling is enabled.</p>
       </section>
       <section>
@@ -139,6 +144,15 @@
         <div id="storageStats" class="storage-stats"></div>
         <div class="button-row"><button id="clearModels" class="danger-secondary" type="button">Clear model cache</button><button id="clearTemporary" class="secondary" type="button">Clear temporary files</button></div>
       </section>
+    </form>
+  </dialog>
+
+  <dialog id="renameSpeakersDialog" aria-labelledby="renameSpeakersTitle">
+    <form id="renameSpeakersForm" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Optional display names</p><h2 id="renameSpeakersTitle">Rename speakers</h2></div><button id="closeRenameSpeakers" class="icon-button" type="button" aria-label="Close speaker names">✕</button></div>
+      <p>Names stay inside this project and are never guessed from a face or voice.</p>
+      <div id="speakerNameFields" class="speaker-name-fields"></div>
+      <div class="button-row overlap-dialog-actions"><button id="cancelRenameSpeakers" class="secondary" type="button">Cancel</button><button type="submit">Save names</button></div>
     </form>
   </dialog>
 
@@ -153,6 +167,50 @@
       </div>
       <div id="exportResults" class="export-results" aria-live="polite"></div>
     </form>
+  </dialog>
+
+  <dialog id="overlapDialog" aria-labelledby="overlapDialogTitle">
+    <div class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Overlapping voices</p><h2 id="overlapDialogTitle">Review two speaker lines</h2></div><button id="discardOverlapTop" class="icon-button" type="button" aria-label="Discard overlap proposal">✕</button></div>
+      <p>The original captions remain unchanged until you apply this proposal. Check both automatic transcripts and speaker labels.</p>
+      <div id="overlapProposal" class="overlap-proposal"></div>
+      <div class="button-row overlap-dialog-actions"><button id="discardOverlap" class="secondary" type="button">Discard</button><button id="applyOverlap" type="button">Apply speaker lines</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="speakerSetupDialog" aria-labelledby="speakerSetupTitle">
+    <form id="speakerSetupForm" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Speaker repair</p><h2 id="speakerSetupTitle">Re-detect speakers</h2></div><button id="closeSpeakerSetup" class="icon-button" type="button" aria-label="Close speaker setup">✕</button></div>
+      <p>Use Auto when you are unsure, or enter the exact number of people when you know it. Existing captions will not change until you review a preview.</p>
+      <fieldset class="speaker-count-options">
+        <legend>How many speakers are in this media?</legend>
+        <label><input type="radio" name="speakerCountMode" value="auto" checked> <span><strong>Auto</strong><small>Conservatively estimate between one and eight speakers.</small></span></label>
+        <label><input type="radio" name="speakerCountMode" value="exact"> <span><strong>Exact number</strong><small>Best when you already know how many people speak.</small></span></label>
+      </fieldset>
+      <label for="exactSpeakerCount">Number of speakers</label>
+      <input id="exactSpeakerCount" type="number" min="1" max="8" value="2" disabled>
+      <div class="button-row overlap-dialog-actions"><button id="cancelSpeakerSetup" class="secondary" type="button">Cancel</button><button type="submit">Create preview</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="speakerProposalDialog" aria-labelledby="speakerProposalTitle">
+    <div class="dialog-card speaker-proposal-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Speaker repair preview</p><h2 id="speakerProposalTitle">Review proposed changes</h2></div><button id="discardSpeakerProposalTop" class="icon-button" type="button" aria-label="Discard speaker proposal">✕</button></div>
+      <p id="speakerProposalSummary"></p>
+      <div id="speakerChangeStats" class="speaker-change-stats"></div>
+      <div id="speakerProposalList" class="speaker-proposal-list" tabindex="0" aria-label="Proposed caption changes"></div>
+      <div class="button-row overlap-dialog-actions"><button id="discardSpeakerProposal" class="secondary" type="button">Discard</button><button id="applySpeakerProposal" type="button">Apply changes</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="transcriptProposalDialog" aria-labelledby="transcriptProposalTitle">
+    <div class="dialog-card speaker-proposal-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Dialogue recovery preview</p><h2 id="transcriptProposalTitle">Review recovered dialogue</h2></div><button id="discardTranscriptProposalTop" class="icon-button" type="button" aria-label="Discard transcript proposal">✕</button></div>
+      <p id="transcriptProposalSummary"></p>
+      <div id="transcriptChangeStats" class="speaker-change-stats"></div>
+      <div id="transcriptProposalList" class="speaker-proposal-list" tabindex="0" aria-label="Recovered caption changes"></div>
+      <div class="button-row overlap-dialog-actions"><button id="discardTranscriptProposal" class="secondary" type="button">Discard</button><button id="applyTranscriptProposal" type="button">Apply changes</button></div>
+    </div>
   </dialog>
 
   <dialog id="exportCompleteDialog" class="export-complete-dialog" aria-labelledby="exportCompleteTitle">

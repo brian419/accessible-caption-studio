@@ -20,3 +20,22 @@ def test_reports_empty_and_low_coverage_projects() -> None:
 def test_clean_caption_has_no_findings() -> None:
     cues = [CaptionCue(start=0, end=2, text="A readable caption.")]
     assert validate_cues(cues, 2) == []
+
+
+def test_intentional_two_speaker_overlap_is_not_an_overlap_error() -> None:
+    cues = [
+        CaptionCue(start=0, end=2, text="First", speaker="Speaker 1", overlap_group_id="g"),
+        CaptionCue(start=0, end=2, text="Second", speaker="Speaker 2", overlap_group_id="g"),
+    ]
+    codes = {finding.code for finding in validate_cues(cues, 2)}
+    assert "overlap" not in codes
+    assert "overlap_timing_mismatch" not in codes
+
+
+def test_invalid_overlap_group_reports_missing_speaker_and_timing() -> None:
+    cues = [
+        CaptionCue(start=0, end=2, text="First", speaker="Speaker 1", overlap_group_id="g"),
+        CaptionCue(start=0.2, end=2.5, text="Second", overlap_group_id="g"),
+    ]
+    codes = {finding.code for finding in validate_cues(cues, 3)}
+    assert {"overlap_missing_speaker", "overlap_timing_mismatch"} <= codes

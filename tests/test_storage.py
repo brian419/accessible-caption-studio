@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from accessible_caption_studio.models import CaptionCue, MediaAsset
+from accessible_caption_studio.models import CaptionCue, MediaAsset, Project
 from accessible_caption_studio.storage import ProjectStore, safe_filename
 
 
@@ -17,6 +17,21 @@ def test_project_lifecycle_and_atomic_persistence(tmp_path: Path) -> None:
     store.delete(project.id)
     with pytest.raises(KeyError):
         store.get(project.id)
+
+
+def test_existing_caption_json_defaults_to_no_overlap_group() -> None:
+    cue = CaptionCue.model_validate({"start": 0, "end": 1, "text": "Legacy caption"})
+    assert cue.overlap_group_id is None
+
+
+def test_existing_project_defaults_to_automatic_speaker_count() -> None:
+    project = Project.model_validate({"name": "Legacy project"})
+    assert project.expected_speaker_count is None
+    assert project.speaker_names == {}
+    assert project.face_tracks == []
+    assert project.visual_speaker_status == "not_analyzed"
+    assert project.speaker_engine == "legacy_wavlm"
+    assert project.fusion_summary.final_speaker_count == 0
 
 
 def test_duplicate_copies_source_but_not_exports(tmp_path: Path) -> None:

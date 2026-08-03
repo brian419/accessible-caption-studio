@@ -13,7 +13,12 @@ import sys
 from pathlib import Path
 
 
-def transcribe(audio_path: Path, model_dir: Path, output_path: Path) -> None:
+def transcribe(
+    audio_path: Path,
+    model_dir: Path,
+    output_path: Path,
+    intervals_path: Path | None = None,
+) -> None:
     # CTranslate2 imports PyTorch only for optional model conversion helpers. Blocking that
     # import avoids loading PyTorch's second OpenMP runtime in the Whisper worker.
     sys.modules["torch"] = None
@@ -25,30 +30,42 @@ def transcribe(audio_path: Path, model_dir: Path, output_path: Path) -> None:
         compute_type="int8",
         download_root=str(model_dir),
     )
-    segments, _ = model.transcribe(
-        str(audio_path),
-        word_timestamps=True,
-        # Silero VAD is trained around speech and can classify sustained singing as
-        # non-speech. Whisper's own no-speech decision still suppresses genuine silence.
-        vad_filter=False,
-        beam_size=5,
-        no_speech_threshold=0.8,
-        condition_on_previous_text=True,
-        temperature=0.0,
-    )
+    intervals = None
+    if intervals_path:
+        intervals = json.loads(intervals_path.read_text(encoding="utf-8"))
+    passes = intervals or [None]
     words: list[dict[str, object]] = []
-    for segment in segments:
-        for word in segment.words or []:
-            text = word.word.strip()
-            if text:
-                words.append(
-                    {
-                        "text": text,
-                        "start": max(0, float(word.start)),
-                        "end": max(float(word.start), float(word.end)),
-                        "confidence": float(word.probability),
-                    }
-                )
+    for interval in passes:
+        if isinstance(interval, dict):
+            clip = [float(interval["start"]), float(interval["end"])]
+            prompt = str(interval.get("prompt") or "") or None
+        else:
+            clip = interval
+            prompt = None
+        segments, _ = model.transcribe(
+            str(audio_path),
+            word_timestamps=True,
+            vad_filter=False,
+            beam_size=5,
+            no_speech_threshold=0.8,
+            condition_on_previous_text=interval is None,
+            initial_prompt=prompt,
+            temperature=0.0,
+            clip_timestamps=clip or "0",
+        )
+        for segment in segments:
+            for word in segment.words or []:
+                text = word.word.strip()
+                if text:
+                    words.append(
+                        {
+                            "text": text,
+                            "start": max(0, float(word.start)),
+                            "end": max(float(word.start), float(word.end)),
+                            "confidence": float(word.probability),
+                            "transcription_source": "recovery" if interval else "primary",
+                        }
+                    )
     temporary = output_path.with_suffix(".partial.json")
     temporary.write_text(json.dumps(words), encoding="utf-8")
     temporary.replace(output_path)
@@ -59,8 +76,14 @@ def main() -> None:
     parser.add_argument("audio_path", type=Path)
     parser.add_argument("model_dir", type=Path)
     parser.add_argument("output_path", type=Path)
+    parser.add_argument("--intervals", type=Path)
     arguments = parser.parse_args()
-    transcribe(arguments.audio_path, arguments.model_dir, arguments.output_path)
+    transcribe(
+        arguments.audio_path,
+        arguments.model_dir,
+        arguments.output_path,
+        arguments.intervals,
+    )
 
 
 if __name__ == "__main__":

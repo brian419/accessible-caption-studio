@@ -21,9 +21,14 @@ dependencies = [
 ml = [
   "faster-whisper>=1.1,<2",
   "numpy>=1.26,<2",
+  "opencv-python-headless==4.10.0.84; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "opencv-python-headless>=4.11,<5; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "soundfile>=0.13,<1",
+  "speechbrain>=1.0,<2",
   "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "torch>=2.8,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "torchaudio==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "torchaudio>=2.8,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "transformers>=4.48,<5",
 ]
 dev = [

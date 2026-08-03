@@ -17,12 +17,16 @@ def export_text(project: Project, project_dir: Path, format_name: str) -> Export
     exports = project_dir / "exports"
     exports.mkdir(exist_ok=True)
     base = safe_filename(project.name, "Accessible captions")
+    display_cues = [
+        cue.model_copy(update={"speaker": project.speaker_names.get(cue.speaker, cue.speaker)})
+        for cue in project.cues
+    ]
     if format_name == "srt":
-        content, suffix = to_srt(project.cues), ".srt"
+        content, suffix = to_srt(display_cues), ".srt"
     elif format_name == "vtt":
-        content, suffix = to_vtt(project.cues), ".vtt"
+        content, suffix = to_vtt(display_cues), ".vtt"
     elif format_name == "html":
-        content, suffix = to_transcript_html(project.name, project.cues), ".html"
+        content, suffix = to_transcript_html(project.name, display_cues), ".html"
     else:
         raise ValueError("unsupported text export")
     destination = exports / f"{base} - accessible captions{suffix}"
@@ -41,6 +45,7 @@ def export_captioned_mp4(
     project: Project,
     project_dir: Path,
     progress: RenderProgress | None = None,
+    job_context: object | None = None,
 ) -> ExportArtifact:
     require_tools()
     if not project.media or not project.media.has_video:
@@ -50,7 +55,15 @@ def export_captioned_mp4(
     exports.mkdir(exist_ok=True)
     base = safe_filename(project.name, "Accessible video")
     subtitle = project_dir / "render-captions.srt"
-    render_cues = [cue.model_copy(update={"text": wrap_caption(cue.text)}) for cue in project.cues]
+    render_cues = [
+        cue.model_copy(
+            update={
+                "text": wrap_caption(cue.text),
+                "speaker": project.speaker_names.get(cue.speaker, cue.speaker),
+            }
+        )
+        for cue in project.cues
+    ]
     subtitle.write_text(to_srt(render_cues), encoding="utf-8")
     destination = exports / f"{base} - captioned.mp4"
     partial = exports / f".{base} - captioned.partial.mp4"
@@ -85,7 +98,12 @@ def export_captioned_mp4(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        start_new_session=True,
     )
+    register = getattr(job_context, "register_process", None)
+    unregister = getattr(job_context, "unregister_process", None)
+    if register:
+        register(process)
     duration = max(project.media.duration, 0.001)
     last_percent = -1
     try:
@@ -110,6 +128,8 @@ def export_captioned_mp4(
         partial.unlink(missing_ok=True)
         raise
     finally:
+        if unregister:
+            unregister(process)
         subtitle.unlink(missing_ok=True)
     if return_code:
         partial.unlink(missing_ok=True)

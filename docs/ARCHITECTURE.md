@@ -14,12 +14,18 @@ records. These rules prevent user-provided paths from escaping the storage root.
 
 - `Project`: title, timestamps, media, cues, raw model output, findings, and exports
 - `MediaAsset`: original/stored names, duration, stream metadata, source URL, and size
-- `CaptionCue`: stable ID, interval, text, anonymous speaker, source, and confidence
-- `WordToken`: Whisper word interval and confidence
-- `SpeakerTurn`: anonymous WavLM-clustered interval
+- `CaptionCue`: stable ID, interval, text, anonymous speaker, source, confidence, and optional
+  overlap-group ID for two utterances sharing one displayed timeframe
+- `WordToken`: Whisper word interval, primary/recovery source, confidence, and optional
+  word-level anonymous speaker evidence
+- `SpeakerTurn`: anonymous interval with audio/visual confidence, evidence method, and an
+  optional anonymous face-track reference
+- `FaceTrackSummary`: time bounds, optional anonymous speaker mapping, and maximum activity
+  confidence; detailed normalized boxes live in `speaker-evidence.json`
 - `SoundEvent`: AudioSet label interval and confidence
 - `ValidationFinding`: stable rule code, severity, message, and optional cue ID
-- `AnalysisJob`: resumable status, stage, progress, message, and structured error code
+- `AnalysisJob`: resumable status, stage, progress, message, structured error code, and an
+  optional persisted proposal result
 - `ExportArtifact`: format, safe filename, creation time, and size
 
 JSON writes use a same-directory temporary file followed by an atomic replace. Media and
@@ -35,6 +41,12 @@ exports use the same partial-file pattern.
 | `GET/PATCH/DELETE` | `/api/projects/{id}` | Open, autosave, rename, or delete |
 | `POST` | `/api/projects/{id}/duplicate` | Copy a project and local source |
 | `POST` | `/api/projects/{id}/analyze` | Start automatic analysis |
+| `POST` | `/api/projects/{id}/analyze-overlap` | Propose two separated voice lines for a selected interval |
+| `POST` | `/api/projects/{id}/reanalyze-speakers` | Build an Auto or exact-count speaker proposal |
+| `POST` | `/api/projects/{id}/speaker-proposals/{job}/apply` | Atomically apply a current speaker proposal |
+| `POST` | `/api/projects/{id}/repair-transcript` | Build an adaptive dialogue-recovery proposal |
+| `POST` | `/api/projects/{id}/transcript-proposals/{job}/apply` | Atomically apply a current transcript proposal |
+| `GET` | `/api/projects/{id}/speaker-evidence` | Stream nearby normalized active-face boxes for the player |
 | `POST` | `/api/projects/{id}/validate` | Recalculate accessibility findings |
 | `GET/POST` | `/api/projects/{id}/jobs/...` | Monitor or cancel background work |
 | `POST` | `/api/projects/{id}/exports/{format}` | Create SRT/VTT/HTML/MP4 output |
@@ -48,17 +60,39 @@ Missing setup is never represented as a successful analysis with silently omitte
 
 `LocalAnalyzer` is the integration boundary for ML work:
 
-1. `faster-whisper/small.en` returns word timestamps and probabilities. It runs in an
-   isolated worker process so CTranslate2 and PyTorch never load competing Intel OpenMP
-   runtimes in the same process.
-2. Public `microsoft/wavlm-base-plus-sv` embeddings group Whisper-derived speech windows
-   by voice similarity. Clusters become anonymous, order-of-appearance speaker labels.
-   The pinned safe-tensor model needs no account, access token, or gated consent.
+1. `faster-whisper/small.en` returns word timestamps and probabilities. An adaptive pass
+   rechecks bounded energetic gaps, low-confidence passages, and rapid visual transitions
+   without previous-text conditioning. Primary and recovery results are reconciled by
+   timestamp, so time-separated repeated dialogue is never removed as duplicate text.
+   Whisper runs in an isolated process so CTranslate2 and PyTorch never share competing
+   Intel OpenMP runtimes.
+2. Public `speechbrain/spkrec-ecapa-voxceleb` ECAPA embeddings group clean,
+   Whisper-derived speech windows by voice similarity. Clusters become anonymous,
+   order-of-appearance speaker labels. The pinned model needs no account, access token,
+   or gated consent and runs in a cancellable worker.
 3. `MIT/ast-finetuned-audioset-10-10-0.4593` scores overlapping audio windows. An
    accessibility-focused whitelist removes generic speech labels, adjacent duplicates are
    merged, and low-confidence events are suppressed.
-4. Words become sentence/pause-aware cues, speakers are chosen by maximum overlap, and
-   useful sound events become bracketed SDH cues.
+4. Each word receives independent ECAPA and visible-face evidence before consecutive word
+   assignments are compressed into speaker turns. Targeted frames and camera cuts allow a
+   supported one-word reply to create a cue boundary without allowing weak visual flicker.
+   Useful sound events become bracketed SDH cues.
+5. On request, public `speechbrain/sepformer-whamr16k` separates a selected interval into
+   at most two streams in an isolated worker. Whisper transcribes each stream, WavLM matches
+   established anonymous labels, and the persisted job result remains a proposal until the
+   editor applies it. This older overlap-only matching adapter does not participate in
+   normal speaker discovery.
+6. Video projects run an isolated OpenCV worker with pinned YuNet and SFace models. YuNet
+   finds faces, SFace temporarily embeds several high-quality frames per track, and
+   average-link cosine clustering anonymously reconnects tracks across camera cuts.
+   Mouth-region movement, word-targeted samples, camera cuts, and speech timing identify
+   likely speaking faces. A weighted association reconciles these identities with ECAPA
+   clusters at word granularity; either signal can degrade independently. Temporary face
+   crops and embeddings are never persisted.
+
+Long-running tools and ML models execute in managed process groups. Cancelling a job first
+persists `cancelling`, sends a graceful termination signal, escalates after two seconds,
+cleans partial artifacts, and prevents late worker results from changing the cancelled job.
 
 Future models should preserve these return contracts so project storage and the editor do
 not depend on a specific ML library.
@@ -66,7 +100,8 @@ not depend on a specific ML library.
 ## Known extension points
 
 - Add a model choice field and multilingual Whisper adapter.
-- Add a visual scene analyzer behind a separate opt-in interface.
+- Add a verified active-speaker model as an optional replacement for the lightweight
+  mouth-activity scorer while preserving the same face-evidence contract.
 - Replace the thread job runner with a process worker for parallel model jobs.
 - Add signed project archives for portable backup and restore.
 - Add formal WCAG-oriented authoring reports without presenting them as legal certification.

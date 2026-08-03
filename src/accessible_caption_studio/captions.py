@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 from pathlib import Path
+from uuid import uuid4
 
 from .models import CaptionCue, SourceType
 
@@ -11,6 +12,8 @@ _TIMESTAMP = re.compile(
     r"(?P<eh>\d{1,2}):(?P<em>\d{2}):(?P<es>\d{2})[,.](?P<ems>\d{3})"
 )
 _TAG = re.compile(r"<[^>]+>")
+_VOICE = re.compile(r"^<v(?:\.\w+)*\s+([^>]+)>(.*?)(?:</v>)?$", re.IGNORECASE)
+_ANONYMOUS_SPEAKER = re.compile(r"^(Speaker \d+):\s*(.+)$", re.IGNORECASE)
 
 
 def _seconds(hours: str, minutes: str, seconds: str, milliseconds: str) -> float:
@@ -34,6 +37,49 @@ def parse_caption_text(content: str) -> list[CaptionCue]:
         while index < len(lines) and lines[index].strip():
             text_lines.append(lines[index].strip())
             index += 1
+        voices = []
+        for line in text_lines:
+            voice = _VOICE.match(line)
+            if voice:
+                voices.append(
+                    (
+                        html.unescape(voice.group(1).strip()),
+                        html.unescape(voice.group(2).strip()),
+                    )
+                )
+        if voices:
+            group_id = uuid4().hex if len(voices) > 1 else None
+            cues.extend(
+                CaptionCue(
+                    start=start,
+                    end=end,
+                    text=text,
+                    speaker=speaker,
+                    source=SourceType.IMPORTED,
+                    overlap_group_id=group_id,
+                )
+                for speaker, text in voices
+            )
+            continue
+        speaker_lines = [
+            match
+            for line in text_lines
+            if (match := _ANONYMOUS_SPEAKER.match(html.unescape(_TAG.sub("", line))))
+        ]
+        if speaker_lines and len(speaker_lines) == len(text_lines):
+            group_id = uuid4().hex if len(speaker_lines) > 1 else None
+            cues.extend(
+                CaptionCue(
+                    start=start,
+                    end=end,
+                    text=match.group(2).strip(),
+                    speaker=match.group(1),
+                    source=SourceType.IMPORTED,
+                    overlap_group_id=group_id,
+                )
+                for match in speaker_lines
+            )
+            continue
         text = html.unescape(_TAG.sub("", " ".join(text_lines)))
         if not text.strip():
             raise ValueError(f"caption at {start:.3f}s has no text")
@@ -66,35 +112,61 @@ def cue_display_text(cue: CaptionCue) -> str:
     return cue.text
 
 
+def caption_groups(cues: list[CaptionCue]) -> list[list[CaptionCue]]:
+    grouped: dict[str, list[CaptionCue]] = {}
+    result: list[list[CaptionCue]] = []
+    for cue in sorted(cues, key=lambda item: (item.start, item.end)):
+        if cue.overlap_group_id:
+            group = grouped.get(cue.overlap_group_id)
+            if group is None:
+                group = []
+                grouped[cue.overlap_group_id] = group
+                result.append(group)
+            group.append(cue)
+        else:
+            result.append([cue])
+    return result
+
+
 def to_srt(cues: list[CaptionCue]) -> str:
     blocks = []
-    for index, cue in enumerate(sorted(cues, key=lambda item: (item.start, item.end)), 1):
+    for index, group in enumerate(caption_groups(cues), 1):
+        cue = group[0]
+        text = "\n".join(cue_display_text(item) for item in group)
         blocks.append(
             f"{index}\n{_timestamp(cue.start, ',')} --> {_timestamp(cue.end, ',')}\n"
-            f"{cue_display_text(cue)}"
+            f"{text}"
         )
     return "\n\n".join(blocks) + "\n"
 
 
 def to_vtt(cues: list[CaptionCue]) -> str:
     blocks = ["WEBVTT"]
-    for cue in sorted(cues, key=lambda item: (item.start, item.end)):
+    for group in caption_groups(cues):
+        cue = group[0]
+        text = "\n".join(
+            f"<v {item.speaker}>{item.text}</v>" if item.speaker else item.text for item in group
+        )
         blocks.append(
-            f"{_timestamp(cue.start, '.')} --> {_timestamp(cue.end, '.')}\n{cue_display_text(cue)}"
+            f"{_timestamp(cue.start, '.')} --> {_timestamp(cue.end, '.')}\n{text}"
         )
     return "\n\n".join(blocks) + "\n"
 
 
 def to_transcript_html(title: str, cues: list[CaptionCue]) -> str:
     rows: list[str] = []
-    for cue in sorted(cues, key=lambda item: (item.start, item.end)):
+    for group in caption_groups(cues):
+        cue = group[0]
         minutes, seconds = divmod(int(cue.start), 60)
         hours, minutes = divmod(minutes, 60)
         stamp = f"{hours:02}:{minutes:02}:{seconds:02}"
-        speaker = f"<strong>{html.escape(cue.speaker)}:</strong> " if cue.speaker else ""
+        utterances = []
+        for item in group:
+            speaker = f"<strong>{html.escape(item.speaker)}:</strong> " if item.speaker else ""
+            utterances.append(f"{speaker}{html.escape(item.text)}")
         rows.append(
             f'<li><time datetime="PT{cue.start:.3f}S">{stamp}</time> '
-            f"{speaker}{html.escape(cue.text)}</li>"
+            f"{'<br>'.join(utterances)}</li>"
         )
     safe_title = html.escape(title)
     return f"""<!doctype html>
