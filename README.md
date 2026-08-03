@@ -25,7 +25,7 @@ workflow, and production-ready exports in one portfolio application.
 - Shows project, model, and temporary storage and lets users clear caches safely
 
 All analysis runs on the computer after the model files have been downloaded. Source
-media, tokens, transcripts, and exports are stored under the ignored `storage/` folder
+media, transcripts, and exports are stored under the ignored `storage/` folder
 and are never committed to Git.
 
 ## Quick start on macOS
@@ -42,19 +42,10 @@ Double-click **Start Accessible Caption Studio.command** in Finder. The first la
 and installs the application and local ML components. It does not replace the system
 Python. That setup can take several minutes. Later launches open the studio directly.
 
-For anonymous speaker labels:
-
-1. Create a free Hugging Face account.
-2. On Apple Silicon, accept the terms for
-   [pyannote Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).
-   Intel Macs instead use the compatible
-   [speaker-diarization 3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   model because current PyTorch packages do not support Community-1 on Intel macOS;
-   also accept the [segmentation 3.0 terms](https://huggingface.co/pyannote/segmentation-3.0).
-3. Create a read token.
-4. Open **Settings** in the studio and save the token.
-
-The token is saved only in `storage/settings.json` with owner-only file permissions.
+Anonymous speaker labels use Microsoft's public WavLM speaker-verification model. It
+downloads automatically on first use, requires no account or access token, and is cached
+locally for later offline analysis. Voice samples derived from Whisper timestamps are
+grouped by similarity and assigned order-of-appearance labels such as `Speaker 1`.
 
 ## Developer setup
 
@@ -98,7 +89,7 @@ Choose **Analyze** through the API if you later want to replace them with automa
 
 ## Privacy, accuracy, and limitations
 
-- Whisper, pyannote, and the Audio Spectrogram Transformer are probabilistic models.
+- Whisper, WavLM voice clustering, and the Audio Spectrogram Transformer are probabilistic models.
   They can miss words, confuse speakers, or describe a sound incorrectly.
 - Live singing is decoded across the full audio so music-heavy passages are not discarded,
   but unusual pronunciation and loud accompaniment can still require manual correction.
@@ -121,7 +112,7 @@ FFprobe validation → private project folder
         ↓
 FFmpeg 16 kHz mono analysis audio
         ↓
-Whisper words ─┬─ pyannote speaker turns ─┬─ AudioSet sound events
+Whisper words ─┬─ WavLM speaker turns ────┬─ AudioSet sound events
                └──── caption composition ──┘
                               ↓
             editor + accessibility validation

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
-import platform
+import math
 import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .errors import SetupError, StudioError
@@ -48,10 +47,9 @@ SOUND_LABELS = {
 
 
 class LocalAnalyzer:
-    def __init__(self, model_dir: Path, hf_token: str | None = None) -> None:
+    def __init__(self, model_dir: Path) -> None:
         self.model_dir = model_dir
         self.model_dir.mkdir(parents=True, exist_ok=True)
-        self.hf_token = hf_token or os.environ.get("HF_TOKEN")
         self.warnings: list[tuple[str, str]] = []
 
     def analyze(
@@ -64,9 +62,13 @@ class LocalAnalyzer:
         )
         words = self.transcribe(audio_path)
         cues = segment_words(words)
-        progress("Finding speakers", 55, "Assigning anonymous speaker turns")
+        progress(
+            "Finding speakers",
+            55,
+            "Loading the free local speaker model (the first download may take a few minutes)",
+        )
         try:
-            speakers = self.diarize(audio_path)
+            speakers = self.diarize(audio_path, words, progress)
         except StudioError as exc:
             speakers = []
             self.warnings.append((exc.code, exc.message))
@@ -122,62 +124,152 @@ class LocalAnalyzer:
                     "transcription_failed", "Whisper returned an unreadable result."
                 ) from exc
 
-    def diarize(self, audio_path: Path) -> list[SpeakerTurn]:
-        if not self.hf_token:
-            raise SetupError(
-                "hf_token_required",
-                "Speaker labeling needs a Hugging Face token with access to the pyannote model.",
-            )
+    def diarize(
+        self,
+        audio_path: Path,
+        words: list[WordToken],
+        progress: ProgressCallback | None = None,
+    ) -> list[SpeakerTurn]:
+        """Group speech windows by voice using a public, token-free WavLM model."""
+
         try:
-            from pyannote.audio import Pipeline
+            import soundfile as sf
+            import torch
+            from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
         except ImportError as exc:
             raise SetupError(
                 "diarization_not_installed",
                 "Speaker labeling dependencies are not installed.",
             ) from exc
+
+        windows = self._speaker_windows(words)
+        if not windows:
+            return []
+
+        model_name = "microsoft/wavlm-base-plus-sv"
+        # This public revision includes safe-tensor weights and has no access form or token.
+        model_revision = "a0bfa70fc99be91689cfb6a9453c3cba66345df0"
         try:
-            intel_mac = sys.platform == "darwin" and platform.machine() == "x86_64"
-            if intel_mac:
-                pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    use_auth_token=self.hf_token,
-                    cache_dir=str(self.model_dir / "huggingface"),
+            cache_dir = str(self.model_dir / "huggingface")
+            extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+                model_name, revision=model_revision, cache_dir=cache_dir
+            )
+            model = WavLMForXVector.from_pretrained(
+                model_name,
+                revision=model_revision,
+                cache_dir=cache_dir,
+                use_safetensors=True,
+            )
+            model.eval()
+            audio, sample_rate = sf.read(str(audio_path), dtype="float32")
+            if audio.ndim > 1:
+                audio = audio.mean(axis=1)
+            if sample_rate != 16_000:
+                raise StudioError(
+                    "speaker_audio_invalid",
+                    "Speaker analysis expected the normalized 16 kHz audio track.",
+                )
+
+            embeddings: list[list[float]] = []
+            for index, (start, end) in enumerate(windows):
+                if progress:
+                    percent = 57 + round(13 * index / max(1, len(windows)))
+                    progress(
+                        "Finding speakers",
+                        percent,
+                        f"Comparing voice sample {index + 1} of {len(windows)}",
+                    )
+                clip = audio[max(0, round(start * sample_rate)) : round(end * sample_rate)]
+                inputs = extractor(clip, sampling_rate=sample_rate, return_tensors="pt")
+                with torch.no_grad():
+                    vector = model(**inputs).embeddings[0]
+                    vector = torch.nn.functional.normalize(vector, dim=0)
+                embeddings.append(vector.cpu().numpy().astype(float).tolist())
+
+            labels = self._cluster_speaker_embeddings(embeddings)
+            turns = [
+                SpeakerTurn(start=start, end=end, speaker=f"Speaker {label + 1}")
+                for (start, end), label in zip(windows, labels, strict=True)
+            ]
+            return self._merge_speaker_turns(turns)
+        except Exception as exc:
+            if isinstance(exc, StudioError):
+                raise
+            raise StudioError(
+                "diarization_failed",
+                "Local speaker labeling could not finish. Captions were still created. "
+                f"Details: {exc}",
+            ) from exc
+
+    @staticmethod
+    def _speaker_windows(words: list[WordToken]) -> list[tuple[float, float]]:
+        """Build useful voice samples from Whisper speech timestamps."""
+
+        if not words:
+            return []
+        windows: list[tuple[float, float]] = []
+        start = words[0].start
+        end = words[0].end
+        for word in words[1:]:
+            pause = word.start - end
+            if pause > 0.75 or word.end - start > 4.0:
+                if end - start >= 0.8:
+                    windows.append((round(max(0.0, start - 0.1), 3), round(end + 0.1, 3)))
+                start = word.start
+            end = word.end
+        if end - start >= 0.8:
+            windows.append((round(max(0.0, start - 0.1), 3), round(end + 0.1, 3)))
+        return windows
+
+    @staticmethod
+    def _cluster_speaker_embeddings(
+        embeddings: Sequence[Sequence[float]], threshold: float = 0.72
+    ) -> list[int]:
+        """Online cosine clustering with stable order-of-appearance labels."""
+
+        vectors = [[float(value) for value in vector] for vector in embeddings]
+        if len(vectors) == 0:
+            return []
+        centers: list[list[float]] = []
+        counts: list[int] = []
+        labels: list[int] = []
+        for vector in vectors:
+            norm = math.sqrt(sum(value * value for value in vector))
+            vector = [value / norm for value in vector] if norm else vector
+            similarities = [
+                sum(a * b for a, b in zip(vector, center, strict=True)) for center in centers
+            ]
+            if similarities and max(similarities) >= threshold:
+                label = similarities.index(max(similarities))
+                counts[label] += 1
+                center = [
+                    (old * (counts[label] - 1) + new) / counts[label]
+                    for old, new in zip(centers[label], vector, strict=True)
+                ]
+                center_norm = math.sqrt(sum(value * value for value in center))
+                centers[label] = (
+                    [value / center_norm for value in center] if center_norm else center
                 )
             else:
-                pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-community-1",
-                    token=self.hf_token,
-                    cache_dir=str(self.model_dir / "huggingface"),
-                )
-            if pipeline is None:
-                raise SetupError(
-                    "pyannote_access_required",
-                    "Speaker labeling needs accepted pyannote model terms "
-                    "and a valid Hugging Face read token.",
-                )
-            output = pipeline(str(audio_path))
-            annotation = getattr(output, "exclusive_speaker_diarization", None)
-            annotation = annotation or getattr(output, "speaker_diarization", output)
-            raw: list[tuple[float, float, str]] = []
-            for turn, _, label in annotation.itertracks(yield_label=True):
-                raw.append((float(turn.start), float(turn.end), str(label)))
-            label_order: dict[str, str] = {}
-            for _, _, label in sorted(raw):
-                label_order.setdefault(label, f"Speaker {len(label_order) + 1}")
-            return [
-                SpeakerTurn(start=start, end=end, speaker=label_order[label])
-                for start, end, label in raw
-            ]
-        except SetupError:
-            raise
-        except Exception as exc:
-            message = str(exc)
-            if "gated" in message.lower() or "401" in message or "403" in message:
-                raise SetupError(
-                    "pyannote_access_required",
-                    "Accept the pyannote model terms on Hugging Face, then save your token again.",
-                ) from exc
-            raise StudioError("diarization_failed", f"Speaker labeling failed: {exc}") from exc
+                label = len(centers)
+                centers.append(vector)
+                counts.append(1)
+            labels.append(label)
+        return labels
+
+    @staticmethod
+    def _merge_speaker_turns(turns: list[SpeakerTurn]) -> list[SpeakerTurn]:
+        merged: list[SpeakerTurn] = []
+        for turn in turns:
+            if (
+                merged
+                and merged[-1].speaker == turn.speaker
+                and turn.start <= merged[-1].end + 0.75
+            ):
+                merged[-1].end = max(merged[-1].end, turn.end)
+            else:
+                merged.append(turn.model_copy())
+        return merged
 
     def detect_sounds(self, audio_path: Path) -> list[SoundEvent]:
         try:

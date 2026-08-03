@@ -131,10 +131,8 @@
       </section>
       <section>
         <h3>Speaker labeling</h3>
-        <p>Pyannote needs a free Hugging Face token once. On Apple Silicon, accept the <a href="https://huggingface.co/pyannote/speaker-diarization-community-1" target="_blank" rel="noreferrer">Community-1 terms</a>. Intel Macs instead need the compatible <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noreferrer">3.1 model terms</a> and <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noreferrer">segmentation 3.0 terms</a>. Then paste a read token below; it stays on this Mac. Captions still work without speaker labeling.</p>
-        <label for="hfToken">Hugging Face token</label>
-        <div class="input-action"><input id="hfToken" type="password" placeholder="hf_…" autocomplete="off"><button id="saveToken" class="secondary" type="button">Save token</button></div>
-        <p id="tokenStatus" class="field-note" role="status"></p>
+        <p>The studio uses a public Microsoft WavLM voice model to assign anonymous labels such as <strong>Speaker 1</strong>. No account, token, organization, website, or consent form is required. The model downloads on first use and then runs privately on this Mac.</p>
+        <p id="speakerModelStatus" class="field-note" role="status">Token-free local speaker labeling is enabled.</p>
       </section>
       <section>
         <h3>Storage</h3>

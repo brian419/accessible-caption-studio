@@ -44,9 +44,5 @@ def test_cache_cleanup_cannot_delete_projects(tmp_path: Path) -> None:
         store.clear_cache("projects")
 
 
-def test_token_permissions_and_safe_names(tmp_path: Path) -> None:
-    store = ProjectStore(tmp_path / "storage")
-    store.save_hf_token("hf_testtoken")
-    assert store.settings()["hf_token"] == "hf_testtoken"
-    assert store.settings_path.stat().st_mode & 0o077 == 0
+def test_safe_names_strip_paths_and_markup() -> None:
     assert safe_filename("../../bad<script>.mp4") == "badscript.mp4"

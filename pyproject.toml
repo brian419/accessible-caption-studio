@@ -21,8 +21,6 @@ dependencies = [
 ml = [
   "faster-whisper>=1.1,<2",
   "numpy>=1.26,<2",
-  "pyannote.audio>=3.3,<4; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-  "pyannote.audio>=4,<5; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "soundfile>=0.13,<1",
   "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "torch>=2.8,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",

@@ -59,8 +59,8 @@ def test_optional_speaker_failure_keeps_transcription(tmp_path: Path, monkeypatc
         lambda _path: [WordToken(text="Hello.", start=0, end=1, confidence=0.9)],
     )
 
-    def unavailable_speakers(_path):
-        raise SetupError("pyannote_access_required", "Speaker model access is unavailable.")
+    def unavailable_speakers(*_args):
+        raise SetupError("diarization_failed", "Speaker model access is unavailable.")
 
     monkeypatch.setattr(analyzer, "diarize", unavailable_speakers)
     monkeypatch.setattr(analyzer, "detect_sounds", lambda _path: [])
@@ -72,5 +72,20 @@ def test_optional_speaker_failure_keeps_transcription(tmp_path: Path, monkeypatc
     assert sounds == []
     assert cues[0].text == "Hello."
     assert analyzer.warnings == [
-        ("pyannote_access_required", "Speaker model access is unavailable.")
+        ("diarization_failed", "Speaker model access is unavailable.")
     ]
+
+
+def test_speaker_windows_follow_pauses_and_limit_sample_length() -> None:
+    words = [
+        WordToken(text="One", start=0.0, end=0.7, confidence=0.9),
+        WordToken(text="two", start=0.75, end=1.6, confidence=0.9),
+        WordToken(text="Three", start=2.5, end=3.4, confidence=0.9),
+        WordToken(text="four", start=3.45, end=4.3, confidence=0.9),
+    ]
+    assert LocalAnalyzer._speaker_windows(words) == [(0.0, 1.7), (2.4, 4.4)]
+
+
+def test_speaker_embeddings_get_stable_anonymous_clusters() -> None:
+    embeddings = [[1.0, 0.0], [0.98, 0.02], [0.0, 1.0], [0.03, 0.97], [1.0, 0.0]]
+    assert LocalAnalyzer._cluster_speaker_embeddings(embeddings) == [0, 0, 1, 1, 0]

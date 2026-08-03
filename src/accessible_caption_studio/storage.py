@@ -112,15 +112,6 @@ class ProjectStore:
         except (OSError, ValueError):
             return {}
 
-    def save_hf_token(self, token: str) -> None:
-        token = token.strip()
-        if token and not token.startswith("hf_"):
-            raise ValueError("Hugging Face tokens normally begin with hf_")
-        temporary = self.settings_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"hf_token": token}), encoding="utf-8")
-        temporary.chmod(0o600)
-        temporary.replace(self.settings_path)
-
     def summary(self) -> StorageSummary:
         return StorageSummary(
             projects_bytes=path_size(self.projects_dir),

@@ -51,12 +51,8 @@ def test_storage_cleanup_does_not_accept_projects(tmp_path: Path) -> None:
     assert client.get("/api/storage").json()["project_count"] == 1
 
 
-def test_token_is_write_only(tmp_path: Path) -> None:
+def test_health_reports_token_free_speaker_engine(tmp_path: Path) -> None:
     client, _ = seeded_client(tmp_path)
-    assert (
-        client.post("/api/settings/hugging-face-token", json={"token": "hf_private"}).status_code
-        == 204
-    )
     health = client.get("/api/health").json()
-    assert health["hf_token_configured"] is True
-    assert "hf_private" not in str(health)
+    assert health["speaker_engine"] == "local-wavlm"
+    assert health["speaker_token_required"] is False

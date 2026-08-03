@@ -31,10 +31,6 @@ class ProjectUpdate(BaseModel):
     cues: list[CaptionCue] | None = None
 
 
-class TokenRequest(BaseModel):
-    token: str
-
-
 def create_app(storage_root: Path | None = None) -> FastAPI:
     root = (storage_root or Path("storage")).resolve()
     store = ProjectStore(root)
@@ -68,7 +64,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         return {
             "ok": True,
             "ffmpeg": shutil.which("ffmpeg") is not None,
-            "hf_token_configured": bool(store.settings().get("hf_token")),
+            "speaker_engine": "local-wavlm",
+            "speaker_token_required": False,
         }
 
     @app.get("/api/projects")
@@ -258,14 +255,6 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return Response(status_code=204)
 
-    @app.post("/api/settings/hugging-face-token", status_code=204)
-    def save_token(request: TokenRequest) -> Response:
-        try:
-            store.save_hf_token(request.token)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return Response(status_code=204)
-
     return app
 
 
@@ -294,7 +283,7 @@ def _analysis_task(
     progress("Preparing audio", 10, "Extracting a private local analysis track")
     if not audio.is_file():
         extract_audio(source, audio)
-    analyzer = LocalAnalyzer(store.models_dir, store.settings().get("hf_token"))
+    analyzer = LocalAnalyzer(store.models_dir)
     words, speakers, sounds, cues = analyzer.analyze(audio, progress)
     project = store.get(project_id)
     project.words = words

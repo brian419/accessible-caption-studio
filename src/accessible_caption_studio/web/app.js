@@ -34,7 +34,6 @@ function bindEvents() {
   bindDropZone();
   $("#settingsButton").addEventListener("click", openSettings);
   $("#darkModeSetting").addEventListener("change", (event) => applyTheme(event.target.checked ? "dark" : "light"));
-  $("#saveToken").addEventListener("click", saveToken);
   $("#clearModels").addEventListener("click", () => clearStorage("models"));
   $("#clearTemporary").addEventListener("click", () => clearStorage("temporary"));
   $("#projectTitle").addEventListener("input", scheduleSave);
@@ -587,7 +586,6 @@ async function pollJob() {
       }
     } else if (job.state === "failed") {
       toast(job.error || "Processing could not be completed.");
-      if (["hf_token_required", "pyannote_access_required"].includes(job.error_code)) openSettings();
     }
     setTimeout(() => { $("#jobPanel").hidden = true; }, 1800);
   } catch (error) { toast(error.message); }
@@ -637,16 +635,10 @@ async function openSettings() {
       <div><strong>${formatBytes(storage.projects_bytes)}</strong><span>Projects</span></div>
       <div><strong>${formatBytes(storage.models_bytes)}</strong><span>Models</span></div>
       <div><strong>${formatBytes(storage.temporary_bytes)}</strong><span>Temporary</span></div>`;
-    $("#tokenStatus").textContent = health.hf_token_configured ? "A token is saved on this Mac." : "No token is configured yet.";
+    $("#speakerModelStatus").textContent = health.speaker_token_required
+      ? "Speaker labeling needs additional setup."
+      : "Token-free local speaker labeling is enabled.";
   } catch (error) { toast(error.message); }
-}
-
-async function saveToken() {
-  try {
-    await api("/api/settings/hugging-face-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: $("#hfToken").value }) });
-    $("#hfToken").value = "";
-    $("#tokenStatus").textContent = "Token saved securely for local model downloads.";
-  } catch (error) { $("#tokenStatus").textContent = error.message; }
 }
 
 async function clearStorage(target) {

@@ -16,7 +16,7 @@ records. These rules prevent user-provided paths from escaping the storage root.
 - `MediaAsset`: original/stored names, duration, stream metadata, source URL, and size
 - `CaptionCue`: stable ID, interval, text, anonymous speaker, source, and confidence
 - `WordToken`: Whisper word interval and confidence
-- `SpeakerTurn`: anonymous pyannote interval
+- `SpeakerTurn`: anonymous WavLM-clustered interval
 - `SoundEvent`: AudioSet label interval and confidence
 - `ValidationFinding`: stable rule code, severity, message, and optional cue ID
 - `AnalysisJob`: resumable status, stage, progress, message, and structured error code
@@ -40,7 +40,6 @@ exports use the same partial-file pattern.
 | `POST` | `/api/projects/{id}/exports/{format}` | Create SRT/VTT/HTML/MP4 output |
 | `GET` | `/api/projects/{id}/exports/{filename}` | Stream a persisted export |
 | `GET/DELETE` | `/api/storage/...` | Inspect or clear non-project caches |
-| `POST` | `/api/settings/hugging-face-token` | Save the local model-access token |
 
 Errors from media or model components use a stable `code` and a plain-language `message`.
 Missing setup is never represented as a successful analysis with silently omitted data.
@@ -52,9 +51,9 @@ Missing setup is never represented as a successful analysis with silently omitte
 1. `faster-whisper/small.en` returns word timestamps and probabilities. It runs in an
    isolated worker process so CTranslate2 and PyTorch never load competing Intel OpenMP
    runtimes in the same process.
-2. `pyannote/speaker-diarization-community-1` returns turns that are mapped to anonymous,
-   order-of-appearance speaker labels. Intel Macs automatically use pyannote 3.1 with
-   the same anonymous-speaker contract.
+2. Public `microsoft/wavlm-base-plus-sv` embeddings group Whisper-derived speech windows
+   by voice similarity. Clusters become anonymous, order-of-appearance speaker labels.
+   The pinned safe-tensor model needs no account, access token, or gated consent.
 3. `MIT/ast-finetuned-audioset-10-10-0.4593` scores overlapping audio windows. An
    accessibility-focused whitelist removes generic speech labels, adjacent duplicates are
    merged, and low-confidence events are suppressed.
