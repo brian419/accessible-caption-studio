@@ -12,6 +12,9 @@ const state = {
   transcriptProposalJobId: null,
   speakerEvidence: [],
   evidenceWindow: null,
+  followPlayback: true,
+  followPlaybackSuspended: false,
+  playbackCueId: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -21,13 +24,19 @@ const mediaPlayer = $("#mediaPlayer");
 const audioPlayer = $("#audioPlayer");
 const themeStorageKey = "accessible-caption-theme";
 const activeSpeakerStorageKey = "accessible-caption-active-speaker";
+const followPlaybackStorageKey = "accessible-caption-follow-playback";
+const youtubeBrowserSignInStorageKey = "accessible-caption-youtube-browser-sign-in";
+const youtubeCookieBrowserStorageKey = "accessible-caption-youtube-cookie-browser";
 
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   applyTheme(document.documentElement.dataset.theme || "light", false);
   try { $("#activeSpeakerSetting").checked = localStorage.getItem(activeSpeakerStorageKey) === "true"; } catch (_) {}
+  try { state.followPlayback = localStorage.getItem(followPlaybackStorageKey) !== "false"; } catch (_) {}
+  restoreBrowserSignIn();
   bindEvents();
+  updateFollowPlaybackButton();
   await loadProjects();
 }
 
@@ -39,6 +48,8 @@ function bindEvents() {
   $("#youtubeTab").addEventListener("click", () => selectTab("youtube"));
   $("#uploadForm").addEventListener("submit", uploadMedia);
   $("#youtubeForm").addEventListener("submit", importYouTube);
+  $("#useBrowserSignIn").addEventListener("change", updateBrowserSignIn);
+  $("#cookieBrowser").addEventListener("change", saveBrowserSignIn);
   $("#mediaInput").addEventListener("change", updateFileLabel);
   bindDropZone();
   $("#settingsButton").addEventListener("click", openSettings);
@@ -55,6 +66,7 @@ function bindEvents() {
     button.addEventListener("click", () => createExport(button.dataset.export))
   );
   $("#addCueButton").addEventListener("click", addCue);
+  $("#followPlaybackButton").addEventListener("click", toggleFollowPlayback);
   $("#improveTranscriptButton").addEventListener("click", improveTranscript);
   $("#redetectSpeakersButton").addEventListener("click", openSpeakerSetup);
   $("#renameSpeakersButton").addEventListener("click", openRenameSpeakers);
@@ -80,6 +92,9 @@ function bindEvents() {
   $("#discardOverlapTop").addEventListener("click", discardOverlapProposal);
   [mediaPlayer, audioPlayer].forEach((player) => player.addEventListener("timeupdate", syncPlayback));
   document.addEventListener("keydown", playbackKeys);
+  ["wheel", "touchstart"].forEach((eventName) =>
+    $("#cueList").addEventListener(eventName, suspendTimelineFollowing, { passive: true })
+  );
 }
 
 function applyTheme(theme, persist = true) {
@@ -219,12 +234,15 @@ async function importYouTube(event) {
     const payload = await api("/api/projects/youtube", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: $("#youtubeUrl").value }),
+      body: JSON.stringify({
+        url: $("#youtubeUrl").value,
+        cookie_browser: $("#useBrowserSignIn").checked ? $("#cookieBrowser").value : null,
+      }),
     });
     state.project = payload.project;
     showWorkspace();
     monitorJob(payload.job);
-    form.reset();
+    $("#youtubeUrl").value = "";
   } catch (error) {
     toast(error.message);
   } finally {
@@ -232,12 +250,38 @@ async function importYouTube(event) {
   }
 }
 
+function restoreBrowserSignIn() {
+  try {
+    $("#useBrowserSignIn").checked = localStorage.getItem(youtubeBrowserSignInStorageKey) === "true";
+    const browser = localStorage.getItem(youtubeCookieBrowserStorageKey);
+    if (["brave", "chrome", "safari", "firefox", "edge"].includes(browser)) {
+      $("#cookieBrowser").value = browser;
+    }
+  } catch (_) { /* Browser storage may be unavailable in private mode. */ }
+  updateBrowserSignIn(false);
+}
+
+function updateBrowserSignIn(persist = true) {
+  const enabled = $("#useBrowserSignIn").checked;
+  $("#browserChoice").hidden = !enabled;
+  $("#cookieBrowser").disabled = !enabled;
+  if (persist) saveBrowserSignIn();
+}
+
+function saveBrowserSignIn() {
+  try {
+    localStorage.setItem(youtubeBrowserSignInStorageKey, String($("#useBrowserSignIn").checked));
+    localStorage.setItem(youtubeCookieBrowserStorageKey, $("#cookieBrowser").value);
+  } catch (_) { /* The choice still applies for this session. */ }
+}
+
 function setBusy(form, busy, label = "") {
-  form.querySelectorAll("button, input").forEach((element) => { element.disabled = busy; });
+  form.querySelectorAll("button, input, select").forEach((element) => { element.disabled = busy; });
   const submit = form.querySelector("button[type=submit]");
   if (!submit) return;
   if (!submit.dataset.label) submit.dataset.label = submit.textContent;
   submit.textContent = busy ? label : submit.dataset.label;
+  if (!busy && form.id === "youtubeForm") updateBrowserSignIn(false);
 }
 
 async function openProject(id) {
@@ -300,6 +344,7 @@ function renderProject() {
 function renderCues() {
   const list = $("#cueList");
   list.replaceChildren();
+  state.playbackCueId = null;
   $("#emptyCues").hidden = state.project.cues.length > 0;
   const flagged = new Set(state.project.findings.filter((item) => item.cue_id).map((item) => item.cue_id));
   state.project.cues.forEach((cue, index) => {
@@ -892,6 +937,56 @@ function bestSpeakerTurn(cue) {
 }
 function seekTo(seconds) { const player = activePlayer(); if (player?.src) player.currentTime = seconds; }
 
+function updateFollowPlaybackButton() {
+  const button = $("#followPlaybackButton");
+  if (!button) return;
+  const activelyFollowing = state.followPlayback && !state.followPlaybackSuspended;
+  button.setAttribute("aria-pressed", String(activelyFollowing));
+  button.textContent = activelyFollowing
+    ? "Following playback"
+    : state.followPlayback ? "Resume following" : "Follow playback";
+}
+
+function toggleFollowPlayback() {
+  if (state.followPlayback && state.followPlaybackSuspended) {
+    state.followPlaybackSuspended = false;
+  } else {
+    state.followPlayback = !state.followPlayback;
+    state.followPlaybackSuspended = false;
+    try { localStorage.setItem(followPlaybackStorageKey, String(state.followPlayback)); }
+    catch (_) { /* The selection still applies for this session. */ }
+  }
+  state.playbackCueId = null;
+  updateFollowPlaybackButton();
+  if (state.followPlayback) syncPlayback();
+}
+
+function suspendTimelineFollowing() {
+  if (!state.followPlayback || activePlayer()?.paused) return;
+  state.followPlaybackSuspended = true;
+  updateFollowPlaybackButton();
+}
+
+function followActiveCue(cue) {
+  if (!cue || !state.followPlayback || state.followPlaybackSuspended) return;
+  if (state.playbackCueId === cue.id) return;
+  state.playbackCueId = cue.id;
+  const list = $("#cueList");
+  const focused = document.activeElement?.closest?.(".cue-row");
+  if (focused && list.contains(focused)) return;
+  const row = document.querySelector(`[data-cue-id="${CSS.escape(cue.id)}"]`);
+  if (!row) return;
+  const listBox = list.getBoundingClientRect();
+  const rowBox = row.getBoundingClientRect();
+  const rowTopInsideList = rowBox.top - listBox.top + list.scrollTop;
+  const target = rowTopInsideList - (list.clientHeight - rowBox.height) / 2;
+  const maximum = Math.max(0, list.scrollHeight - list.clientHeight);
+  list.scrollTo({
+    top: Math.min(maximum, Math.max(0, target)),
+    behavior: "auto",
+  });
+}
+
 function syncPlayback() {
   if (!state.project) return;
   const time = activePlayer().currentTime;
@@ -904,8 +999,16 @@ function syncPlayback() {
     .map((cue) => `${cue.speaker ? `${displaySpeaker(cue.speaker)}: ` : ""}${cue.text}`)
     .join("\n");
   updateActiveFace(time);
-  document.querySelectorAll(".cue-row.active").forEach((row) => row.classList.remove("active"));
-  visible.forEach((cue) => document.querySelector(`[data-cue-id="${CSS.escape(cue.id)}"]`)?.classList.add("active"));
+  document.querySelectorAll(".cue-row.active").forEach((row) => {
+    row.classList.remove("active");
+    row.removeAttribute("aria-current");
+  });
+  visible.forEach((cue) => {
+    const row = document.querySelector(`[data-cue-id="${CSS.escape(cue.id)}"]`);
+    row?.classList.add("active");
+    row?.setAttribute("aria-current", "true");
+  });
+  followActiveCue(primary);
 }
 
 function playbackKeys(event) {

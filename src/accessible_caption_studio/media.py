@@ -10,6 +10,21 @@ from .errors import StudioError
 from .models import MediaAsset
 
 SUPPORTED_MEDIA = {".mp4", ".mov", ".webm", ".mp3", ".wav", ".m4a"}
+SUPPORTED_COOKIE_BROWSERS = {"brave", "chrome", "edge", "firefox", "safari"}
+
+
+def _deno_runtime() -> str | None:
+    discovered = shutil.which("deno")
+    if discovered:
+        return discovered
+    for candidate in (
+        Path("/opt/local/bin/deno"),
+        Path("/opt/homebrew/bin/deno"),
+        Path("/usr/local/bin/deno"),
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def require_tools() -> None:
@@ -83,12 +98,18 @@ def extract_audio(source: Path, destination: Path, job_context: object | None = 
 
 
 def download_youtube(
-    url: str, destination_dir: Path, job_context: object | None = None
+    url: str,
+    destination_dir: Path,
+    job_context: object | None = None,
+    *,
+    cookie_browser: str | None = None,
 ) -> tuple[Path, str]:
     if not url.startswith(
         ("https://www.youtube.com/", "https://youtube.com/", "https://youtu.be/")
     ):
         raise StudioError("invalid_url", "Enter a complete YouTube video URL.")
+    if cookie_browser not in SUPPORTED_COOKIE_BROWSERS | {None}:
+        raise StudioError("invalid_cookie_browser", "Choose a supported browser session.")
     template = str(destination_dir / "source.%(ext)s")
     command = [
         sys.executable,
@@ -96,7 +117,6 @@ def download_youtube(
         "yt_dlp",
         "--no-playlist",
         "--quiet",
-        "--no-warnings",
         "--restrict-filenames",
         "-f",
         "bv*+ba/b",
@@ -106,17 +126,63 @@ def download_youtube(
         template,
         "--print",
         "after_move:%(title)s",
-        url,
     ]
+    deno = _deno_runtime()
+    if deno:
+        command.extend(["--js-runtimes", f"deno:{deno}"])
+    if cookie_browser:
+        command.extend(["--cookies-from-browser", cookie_browser])
+    command.append(url)
     try:
         runner = getattr(job_context, "run_process", None)
         process = runner(command) if runner else subprocess.run(
             command, capture_output=True, text=True, check=False
         )
         if process.returncode:
-            raise RuntimeError((process.stderr or process.stdout or "download failed")[-900:])
+            output = (process.stderr or process.stdout or "download failed")[-1600:]
+            normalized = output.lower().replace("’", "'")
+            if "sign in to confirm you're not a bot" in normalized:
+                raise StudioError(
+                    "youtube_auth_required",
+                    "YouTube asked for a signed-in session. Return to the YouTube import, "
+                    "turn on ‘Use my browser sign-in,’ choose a browser where you are signed "
+                    "into YouTube, and try again.",
+                )
+            if "requested format is not available" in normalized and any(
+                phrase in normalized
+                for phrase in (
+                    "javascript runtime",
+                    "challenge solver",
+                    "only images are available",
+                    "nsig extraction failed",
+                )
+            ):
+                raise StudioError(
+                    "youtube_runtime_missing",
+                    "YouTube’s download challenge could not be solved. Restart Accessible "
+                    "Caption Studio so it can install the required downloader component, then "
+                    "try again.",
+                )
+            if cookie_browser and any(
+                phrase in normalized
+                for phrase in (
+                    "could not copy browser cookie database",
+                    "failed to decrypt",
+                    "could not find",
+                    "cookie database",
+                )
+            ):
+                raise StudioError(
+                    "youtube_cookie_access_failed",
+                    f"Could not use the {cookie_browser.title()} sign-in. Make sure YouTube is "
+                    "signed in there, close the browser if it is locking its cookie database, "
+                    "and try again.",
+                )
+            raise StudioError("youtube_download_failed", f"YouTube download failed: {output}")
         lines = [line.strip() for line in (process.stdout or "").splitlines() if line.strip()]
         title = lines[-1] if lines else "YouTube video"
+    except StudioError:
+        raise
     except Exception as exc:
         raise StudioError("youtube_download_failed", f"YouTube download failed: {exc}") from exc
     candidates = [path for path in destination_dir.glob("source.*") if path.suffix != ".part"]

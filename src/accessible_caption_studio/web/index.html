@@ -59,6 +59,23 @@
               <input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" required>
               <button class="primary" type="submit">Import and caption</button>
             </div>
+            <div class="browser-signin-option">
+              <label class="check-row" for="useBrowserSignIn">
+                <input id="useBrowserSignIn" type="checkbox">
+                <span><strong>Use my browser sign-in</strong><small>Try this when YouTube asks you to confirm you’re not a bot. This choice stays on until you turn it off.</small></span>
+              </label>
+              <div id="browserChoice" class="browser-choice" hidden>
+                <label for="cookieBrowser"><strong>Signed-in browser</strong></label>
+                <select id="cookieBrowser" disabled>
+                  <option value="brave">Brave</option>
+                  <option value="chrome">Google Chrome</option>
+                  <option value="safari">Safari</option>
+                  <option value="firefox">Firefox</option>
+                  <option value="edge">Microsoft Edge</option>
+                </select>
+                <p>The app remembers only this preference. Your sign-in stays in the browser; cookies are read locally when importing and are never copied into a project.</p>
+              </div>
+            </div>
             <p class="permission-note"><span aria-hidden="true">ⓘ</span><span>Download only videos you have permission to use. Playlists are not imported.</span></p>
           </form>
         </div>
@@ -109,13 +126,20 @@
 
         <section class="editor-panel" aria-labelledby="captionsTitle">
           <div class="editor-heading">
-            <div><p class="eyebrow">Timeline editor</p><h2 id="captionsTitle">Captions</h2></div>
-            <div class="editor-tools">
-              <button id="undoButton" class="icon-button" type="button" disabled>Undo</button>
-              <button id="improveTranscriptButton" class="secondary" type="button">Improve transcription</button>
-              <button id="redetectSpeakersButton" class="secondary" type="button">Re-detect speakers</button>
-              <button id="renameSpeakersButton" class="secondary" type="button">Rename speakers</button>
-              <button id="addCueButton" class="secondary" type="button">+ Add caption</button>
+            <div class="editor-title-row">
+              <div><p class="eyebrow">Timeline editor</p><h2 id="captionsTitle">Captions</h2></div>
+              <button id="addCueButton" class="primary editor-action" type="button">+ Add caption</button>
+            </div>
+            <div class="editor-tools" aria-label="Timeline controls">
+              <div class="editor-tool-group" role="group" aria-label="Playback and edit history">
+                <button id="followPlaybackButton" class="secondary follow-playback editor-action" type="button" aria-pressed="true">Following playback</button>
+                <button id="undoButton" class="secondary editor-action" type="button" disabled>Undo</button>
+              </div>
+              <div class="editor-tool-group" role="group" aria-label="Caption analysis tools">
+                <button id="improveTranscriptButton" class="secondary editor-action" type="button">Improve transcription</button>
+                <button id="redetectSpeakersButton" class="secondary editor-action" type="button">Re-detect speakers</button>
+                <button id="renameSpeakersButton" class="secondary editor-action" type="button">Rename speakers</button>
+              </div>
             </div>
           </div>
           <div class="column-labels" aria-hidden="true"><span>Time</span><span>Caption text</span><span>Speaker & confidence</span></div>

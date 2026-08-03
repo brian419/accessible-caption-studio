@@ -25,6 +25,9 @@ if [[ ! -f .setup-complete-v4 || ! -x .studio-venv/bin/python ]]; then
   .bootstrap/bin/uv venv --python 3.11 --clear .studio-venv
   .bootstrap/bin/uv pip install --python .studio-venv/bin/python -e ".[ml]"
   touch .setup-complete-v4
+elif ! .studio-venv/bin/python -c "import yt_dlp_ejs" >/dev/null 2>&1; then
+  echo "Updating YouTube download support. This should take only a moment."
+  .bootstrap/bin/uv pip install --python .studio-venv/bin/python -e ".[ml]"
 fi
 
 exec .studio-venv/bin/accessible-caption-studio start

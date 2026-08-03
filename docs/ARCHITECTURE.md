@@ -97,6 +97,10 @@ cleans partial artifacts, and prevents late worker results from changing the can
 Future models should preserve these return contracts so project storage and the editor do
 not depend on a specific ML library.
 
+The browser editor follows the active timed cue inside its own scroll container. Following
+is suspended while the user manually scrolls or edits a cue, supports simultaneous rows,
+respects reduced-motion preferences, and can be resumed or disabled explicitly.
+
 ## Known extension points
 
 - Add a model choice field and multilingual Whisper adapter.

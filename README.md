@@ -27,6 +27,7 @@ workflow, and production-ready exports in one portfolio application.
 - Checks timing, overlap, duration, line length, line count, and reading speed
 - Keeps long accessibility reports and caption timelines in matched, independently scrolling panels
 - Provides synchronized video/audio preview and keyboard playback controls
+- Keeps the active timeline caption centered during playback with a user-controlled follow mode
 - Offers persistent light and dark appearance modes under Settings
 - Supports add, edit, delete, split, merge, reorder, and undo
 - Saves projects automatically so they can be reopened later

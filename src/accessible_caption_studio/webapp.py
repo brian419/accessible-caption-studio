@@ -7,7 +7,7 @@ import shutil
 from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -40,6 +40,7 @@ from .visual import analyze_active_speakers
 
 class YouTubeRequest(BaseModel):
     url: str
+    cookie_browser: Literal["brave", "chrome", "edge", "firefox", "safari"] | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -135,7 +136,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
             progress("Downloading", 5, "Downloading the selected YouTube video")
             project_dir = store.project_dir(project.id)
-            source, title = download_youtube(request.url, project_dir, progress)
+            source, title = download_youtube(
+                request.url,
+                project_dir,
+                progress,
+                cookie_browser=request.cookie_browser,
+            )
             final_name = safe_filename(f"{title}{source.suffix}")
             final_path = project_dir / final_name
             source.replace(final_path)
