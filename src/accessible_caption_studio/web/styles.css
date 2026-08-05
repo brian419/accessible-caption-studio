@@ -58,7 +58,7 @@ button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 a { color: var(--blue-dark); }
-:focus-visible { outline: 3px solid #f5b942; outline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 .skip-link { position: fixed; left: 1rem; top: -5rem; z-index: 100; background: var(--navy); color: white; padding: .8rem 1rem; border-radius: .5rem; }
 .skip-link:focus { top: 1rem; }
