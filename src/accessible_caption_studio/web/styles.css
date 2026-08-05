@@ -175,20 +175,101 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
   border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
   background: color-mix(in srgb, var(--finding-error) 65%, var(--control));
 }
-.danger-confirm {
-  border: 1px solid var(--danger);
-  border-radius: 9px;
-  padding: .7rem .95rem;
-  color: #fff;
-  background: #b42318;
-  font-weight: 800;
+.delete-all-dialog {
+  width: min(560px, calc(100vw - 2rem));
 }
-.danger-confirm:hover { background: #8f1c13; }
-:root[data-theme="dark"] .danger-confirm { color: #1b0d0d; background: var(--danger); }
-:root[data-theme="dark"] .danger-confirm:hover { background: #ffaaa4; }
-.delete-all-dialog { width: min(560px, calc(100vw - 2rem)); }
-.delete-all-dialog p strong { color: var(--ink); }
+
+.delete-all-dialog .dialog-card {
+  padding: 1.35rem;
+}
+
+.delete-all-dialog .dialog-heading {
+  gap: 1rem;
+}
+
+.delete-all-dialog .dialog-heading .icon-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--control);
+  color: var(--muted);
+}
+
+.delete-all-dialog .dialog-heading .icon-button:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+  background: var(--sky);
+}
+
+.delete-all-dialog p strong,
+.delete-all-dialog #deleteProjectName {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.delete-all-dialog .overlap-dialog-actions {
+  gap: .55rem;
+}
+
+.delete-all-dialog .secondary,
+.delete-all-dialog .danger-confirm {
+  min-height: 36px;
+  padding: .42rem .72rem;
+  border-radius: 8px;
+  font-size: .8rem;
+  font-weight: 750;
+  box-shadow: none;
+  transition: background .16s, border-color .16s, color .16s;
+}
+
+.delete-all-dialog .secondary {
+  color: var(--muted);
+  background: var(--control);
+  border: 1px solid var(--line);
+}
+
+.delete-all-dialog .secondary:hover {
+  color: var(--blue-dark);
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+  background: var(--sky);
+}
+
+.danger-confirm {
+  color: var(--muted);
+  background: var(--control);
+  border: 1px solid var(--line);
+}
+
+.danger-confirm:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--line));
+  background: color-mix(in srgb, var(--finding-error) 72%, var(--control));
+}
+
+.danger-confirm:active {
+  color: #fff;
+  border-color: #b42318;
+  background: #b42318;
+}
+
+:root[data-theme="dark"] .danger-confirm:active {
+  color: #1b0d0d;
+  border-color: var(--danger);
+  background: var(--danger);
+}
 .empty-state { color: var(--muted); text-align: center; border: 1px dashed #b7c1d4; border-radius: 12px; padding: 2rem; }
+
+#emptyCues {
+  width: fit-content;
+  max-width: calc(100% - 2rem);
+  margin: 2rem auto;
+  padding: 0.85rem 1.15rem;
+  border-radius: 10px;
+}
 
 .workspace { padding: 0 clamp(1rem, 3vw, 2.5rem) 2rem; }
 .workspace-bar { min-height: 76px; display: grid; grid-template-columns: 160px minmax(200px, 1fr) auto; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }

@@ -267,6 +267,24 @@
     </div>
   </dialog>
 
+
+  <dialog id="deleteConfirmDialog" class="delete-all-dialog" aria-labelledby="deleteConfirmTitle" aria-describedby="deleteConfirmDescription">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Permanent action</p>
+          <h2 id="deleteConfirmTitle">Delete project?</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close delete confirmation">✕</button>
+      </div>
+      <p id="deleteConfirmDescription">Delete “<strong id="deleteProjectName">this project</strong>” and its local media? This cannot be undone.</p>
+      <div class="button-row overlap-dialog-actions">
+        <button class="secondary" value="cancel">Cancel</button>
+        <button id="confirmDeleteProject" class="danger-confirm" value="confirm">Delete project</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="deleteAllConfirmDialog" class="delete-all-dialog" aria-labelledby="deleteAllConfirmTitle" aria-describedby="deleteAllConfirmDescription">
     <form method="dialog" class="dialog-card">
       <div class="dialog-heading">

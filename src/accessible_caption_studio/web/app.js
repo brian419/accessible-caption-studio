@@ -15,6 +15,8 @@ const state = {
   followPlayback: true,
   followPlaybackSuspended: false,
   playbackCueId: null,
+  deleteProjectId: null,
+  deleteTriggerButton: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -48,6 +50,7 @@ function bindEvents() {
   $("#refreshProjects").addEventListener("click", loadProjects);
   $("#deleteAllProjects").addEventListener("click", openDeleteAllProjectsDialog);
   $("#deleteAllConfirmDialog").addEventListener("close", handleDeleteAllProjectsDialogClose);
+  $("#deleteConfirmDialog").addEventListener("close", handleDeleteProjectDialogClose);
   $("#fileTab").addEventListener("click", () => selectTab("file"));
   $("#youtubeTab").addEventListener("click", () => selectTab("youtube"));
   $("#uploadForm").addEventListener("submit", uploadMedia);
@@ -197,7 +200,7 @@ function renderProjects() {
     actions.className = "button-row project-card-actions";
     actions.append(
       smallAction("Duplicate", () => duplicateProject(project.id)),
-      smallAction("Delete", () => deleteProject(project.id), true),
+      smallAction("Delete", (event) => openDeleteProjectDialog(project.id, event.currentTarget), true),
     );
     wrapper.append(open, actions);
     list.append(wrapper);
@@ -209,7 +212,7 @@ function smallAction(label, handler, danger = false) {
   button.type = "button";
   button.className = danger ? "project-action project-action-delete" : "project-action project-action-duplicate";
   button.textContent = label;
-  button.addEventListener("click", handler);
+  button.addEventListener("click", (event) => handler(event));
   return button;
 }
 
@@ -1172,14 +1175,54 @@ async function duplicateProject(id) {
   } catch (error) { toast(error.message); }
 }
 
-async function deleteProject(id) {
+function openDeleteProjectDialog(id, triggerButton) {
   const project = state.projects.find((item) => item.id === id);
-  if (!confirm(`Delete “${project?.name || "this project"}” and its local media? This cannot be undone.`)) return;
+  if (!project) return;
+
+  state.deleteProjectId = id;
+  state.deleteTriggerButton = triggerButton;
+  $("#deleteProjectName").textContent = project.name;
+
+  const dialog = $("#deleteConfirmDialog");
+  dialog.returnValue = "";
+  dialog.showModal();
+}
+
+async function handleDeleteProjectDialogClose() {
+  const dialog = $("#deleteConfirmDialog");
+  const projectId = state.deleteProjectId;
+  const triggerButton = state.deleteTriggerButton;
+  const confirmed = dialog.returnValue === "confirm" && Boolean(projectId);
+
+  if (!confirmed) {
+    state.deleteProjectId = null;
+    state.deleteTriggerButton = null;
+    if (triggerButton?.isConnected) triggerButton.focus();
+    return;
+  }
+
+  const confirmButton = $("#confirmDeleteProject");
+  confirmButton.disabled = true;
+  confirmButton.textContent = "Deleting…";
+
   try {
-    await api(`/api/projects/${id}`, { method: "DELETE" });
+    await api(`/api/projects/${projectId}`, { method: "DELETE" });
     toast("Project deleted.");
     await loadProjects();
-  } catch (error) { toast(error.message); }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    confirmButton.disabled = false;
+    confirmButton.textContent = "Delete project";
+    state.deleteProjectId = null;
+    state.deleteTriggerButton = null;
+
+    if (triggerButton?.isConnected) {
+      triggerButton.focus();
+    } else {
+      $("#refreshProjects").focus();
+    }
+  }
 }
 
 function openDeleteAllProjectsDialog() {
