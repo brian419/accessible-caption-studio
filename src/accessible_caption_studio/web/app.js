@@ -46,6 +46,8 @@ function bindEvents() {
   $("#homeButton").addEventListener("click", showHome);
   $("#backButton").addEventListener("click", showHome);
   $("#refreshProjects").addEventListener("click", loadProjects);
+  $("#deleteAllProjects").addEventListener("click", openDeleteAllProjectsDialog);
+  $("#deleteAllConfirmDialog").addEventListener("close", handleDeleteAllProjectsDialogClose);
   $("#fileTab").addEventListener("click", () => selectTab("file"));
   $("#youtubeTab").addEventListener("click", () => selectTab("youtube"));
   $("#uploadForm").addEventListener("submit", uploadMedia);
@@ -172,7 +174,9 @@ async function loadProjects() {
 function renderProjects() {
   const list = $("#projectList");
   list.replaceChildren();
-  $("#emptyProjects").hidden = state.projects.length > 0;
+  const hasProjects = state.projects.length > 0;
+  $("#emptyProjects").hidden = hasProjects;
+  $("#deleteAllProjects").hidden = !hasProjects;
   state.projects.forEach((project) => {
     const wrapper = document.createElement("article");
     wrapper.className = "project-card";
@@ -190,8 +194,7 @@ function renderProjects() {
     open.append(type, title, meta);
     open.addEventListener("click", () => openProject(project.id));
     const actions = document.createElement("div");
-    actions.className = "button-row";
-    actions.style.marginTop = ".8rem";
+    actions.className = "button-row project-card-actions";
     actions.append(
       smallAction("Duplicate", () => duplicateProject(project.id)),
       smallAction("Delete", () => deleteProject(project.id), true),
@@ -204,8 +207,7 @@ function renderProjects() {
 function smallAction(label, handler, danger = false) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = danger ? "danger-secondary" : "secondary";
-  button.style.padding = ".35rem .55rem";
+  button.className = danger ? "project-action project-action-delete" : "project-action project-action-duplicate";
   button.textContent = label;
   button.addEventListener("click", handler);
   return button;
@@ -1178,6 +1180,46 @@ async function deleteProject(id) {
     toast("Project deleted.");
     await loadProjects();
   } catch (error) { toast(error.message); }
+}
+
+function openDeleteAllProjectsDialog() {
+  if (!state.projects.length) return;
+  const dialog = $("#deleteAllConfirmDialog");
+  $("#deleteAllProjectCount").textContent = `${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}`;
+  dialog.returnValue = "";
+  dialog.showModal();
+}
+
+async function handleDeleteAllProjectsDialogClose() {
+  const dialog = $("#deleteAllConfirmDialog");
+  if (dialog.returnValue !== "confirm") return;
+
+  const confirmButton = $("#confirmDeleteAllProjects");
+  const cancelButton = $("#cancelDeleteAllProjects");
+  const ids = state.projects.map((project) => project.id);
+  let deletedCount = 0;
+
+  confirmButton.disabled = true;
+  cancelButton.disabled = true;
+  $("#deleteAllProjects").disabled = true;
+  confirmButton.textContent = "Deleting…";
+
+  try {
+    for (const id of ids) {
+      await api(`/api/projects/${id}`, { method: "DELETE" });
+      deletedCount += 1;
+    }
+    toast(`Deleted ${deletedCount} ${deletedCount === 1 ? "project" : "projects"}.`);
+  } catch (error) {
+    toast(`Deleted ${deletedCount} of ${ids.length} projects. ${error.message}`);
+  } finally {
+    confirmButton.disabled = false;
+    cancelButton.disabled = false;
+    $("#deleteAllProjects").disabled = false;
+    confirmButton.textContent = "Delete all projects";
+    await loadProjects();
+    $("#deleteAllProjects").focus();
+  }
 }
 
 async function openSettings() {

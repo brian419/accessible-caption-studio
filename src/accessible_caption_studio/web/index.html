@@ -82,8 +82,19 @@
       </div>
 
       <section class="recent" aria-labelledby="recentTitle">
-        <div class="section-heading"><div><p class="eyebrow">Continue your work</p><h2 id="recentTitle">Recent projects</h2></div><button id="refreshProjects" class="text-button" type="button">Refresh</button></div>
-        <div id="projectList" class="project-grid"></div>
+        <div class="section-heading recent-heading">
+          <div>
+            <p class="eyebrow">Continue your work</p>
+            <h2 id="recentTitle">Recent projects</h2>
+          </div>
+          <div class="recent-actions">
+            <button id="deleteAllProjects" class="delete-all-button" type="button" hidden>Delete all</button>
+            <button id="refreshProjects" class="text-button" type="button">Refresh</button>
+          </div>
+        </div>
+        <div class="project-list-container" aria-label="Recent projects list">
+          <div id="projectList" class="project-grid"></div>
+        </div>
         <p id="emptyProjects" class="empty-state">Your saved projects will appear here.</p>
       </section>
     </section>
@@ -254,6 +265,23 @@
         <a id="downloadCompletedExport" class="button-link primary" href="#">Download</a>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="deleteAllConfirmDialog" class="delete-all-dialog" aria-labelledby="deleteAllConfirmTitle" aria-describedby="deleteAllConfirmDescription">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Permanent action</p>
+          <h2 id="deleteAllConfirmTitle">Delete all recent projects?</h2>
+        </div>
+        <button id="cancelDeleteAllProjectsTop" class="icon-button" value="cancel" aria-label="Close delete all confirmation">✕</button>
+      </div>
+      <p id="deleteAllConfirmDescription">This will permanently delete <strong id="deleteAllProjectCount">all projects</strong> and their locally stored media. This cannot be undone.</p>
+      <div class="button-row overlap-dialog-actions">
+        <button id="cancelDeleteAllProjects" class="secondary" value="cancel">Cancel</button>
+        <button id="confirmDeleteAllProjects" class="danger-confirm" value="confirm">Delete all projects</button>
+      </div>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
