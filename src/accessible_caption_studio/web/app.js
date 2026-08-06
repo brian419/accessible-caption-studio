@@ -3,6 +3,8 @@ const state = {
   projects: [],
   undo: [],
   activeJob: null,
+  activeJobProjectId: null,
+  activeJobProjectName: "",
   pollTimer: null,
   saveTimer: null,
   overlapProposal: null,
@@ -30,6 +32,7 @@ const followPlaybackStorageKey = "accessible-caption-follow-playback";
 const youtubeBrowserSignInStorageKey = "accessible-caption-youtube-browser-sign-in";
 const youtubeCookieBrowserStorageKey = "accessible-caption-youtube-cookie-browser";
 const transcriptionQualityStorageKey = "accessible-caption-transcription-quality";
+const activeJobStates = new Set(["queued", "running", "cancelling"]);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -111,7 +114,7 @@ function setupJobPanelStickiness() {
   const anchor = $("#jobPanelAnchor");
 
   const updateStuckState = () => {
-    if (panel.hidden || workspaceView.hidden) {
+    if (panel.hidden) {
       panel.classList.remove("is-stuck");
       return;
     }
@@ -211,6 +214,7 @@ function renderProjects() {
   state.projects.forEach((project) => {
     const wrapper = document.createElement("article");
     wrapper.className = "project-card";
+    wrapper.dataset.projectId = project.id;
     const open = document.createElement("button");
     open.type = "button";
     open.className = "project-open";
@@ -222,7 +226,16 @@ function renderProjects() {
     title.textContent = project.name;
     const meta = document.createElement("span");
     meta.textContent = `${project.cues.length} captions · ${relativeDate(project.updated_at)}`;
-    open.append(type, title, meta);
+    const jobStatus = document.createElement("span");
+    jobStatus.className = "project-job-status";
+    jobStatus.hidden = true;
+    const jobSpinner = document.createElement("span");
+    jobSpinner.className = "project-job-spinner";
+    jobSpinner.setAttribute("aria-hidden", "true");
+    const jobStatusText = document.createElement("span");
+    jobStatusText.className = "project-job-status-text";
+    jobStatus.append(jobSpinner, jobStatusText);
+    open.append(type, title, meta, jobStatus);
     open.addEventListener("click", () => openProject(project.id));
     const actions = document.createElement("div");
     actions.className = "button-row project-card-actions";
@@ -232,6 +245,45 @@ function renderProjects() {
     );
     wrapper.append(open, actions);
     list.append(wrapper);
+    updateProjectCardJobStatus(wrapper, project.id);
+  });
+}
+
+function isActiveJob(job = state.activeJob) {
+  return Boolean(job && activeJobStates.has(job.state));
+}
+
+function projectHasActiveJob(projectId) {
+  return isActiveJob() && String(state.activeJobProjectId) === String(projectId);
+}
+
+function activeJobDeletionMessage(projectName, deleteAll = false) {
+  const name = projectName || state.activeJobProjectName || "This project";
+  return deleteAll
+    ? `“${name}” is still processing. Let it finish or cancel the active job before deleting all projects.`
+    : `“${name}” is still processing. Let it finish or cancel the active job before deleting it.`;
+}
+
+function activeJobDuplicationMessage(projectName) {
+  const name = projectName || state.activeJobProjectName || "This project";
+  return `“${name}” is still processing. Let it finish or cancel the active job before duplicating it.`;
+}
+
+function updateProjectCardJobStatus(card, projectId) {
+  const status = card.querySelector(".project-job-status");
+  const statusText = card.querySelector(".project-job-status-text");
+  if (!status || !statusText) return;
+  const active = projectHasActiveJob(projectId);
+  card.classList.toggle("has-active-job", active);
+  status.hidden = !active;
+  if (!active) return;
+  const progress = Math.max(0, Math.min(100, Math.round(Number(state.activeJob.progress) || 0)));
+  statusText.textContent = `${state.activeJob.stage || "Processing"} · ${progress}%`;
+}
+
+function syncActiveJobIndicators() {
+  document.querySelectorAll(".project-card[data-project-id]").forEach((card) => {
+    updateProjectCardJobStatus(card, card.dataset.projectId);
   });
 }
 
@@ -342,7 +394,7 @@ async function openProject(id) {
     showWorkspace();
     if (state.project.latest_job_id) {
       const job = await api(`/api/projects/${id}/jobs/${state.project.latest_job_id}`);
-      if (["queued", "running", "cancelling"].includes(job.state)) monitorJob(job);
+      if (activeJobStates.has(job.state)) monitorJob(job, id, state.project.name);
     }
   } catch (error) {
     toast(error.message);
@@ -359,7 +411,6 @@ function showWorkspace() {
 }
 
 async function showHome() {
-  clearTimeout(state.pollTimer);
   workspaceView.hidden = true;
   homeView.hidden = false;
   state.project = null;
@@ -1072,8 +1123,13 @@ function playbackKeys(event) {
   if (event.code === "ArrowRight") { event.preventDefault(); player.currentTime = Math.min(player.duration || Infinity, player.currentTime + 5); }
 }
 
-function monitorJob(job) {
+function monitorJob(job, projectId = state.project?.id, projectName = state.project?.name) {
+  if (!job || !projectId) return;
   state.activeJob = job;
+  state.activeJobProjectId = projectId;
+  state.activeJobProjectName = projectName
+    || state.projects.find((project) => String(project.id) === String(projectId))?.name
+    || "Current project";
   $("#jobPanel").hidden = false;
   updateJobPanel(job);
   clearTimeout(state.pollTimer);
@@ -1081,54 +1137,79 @@ function monitorJob(job) {
 }
 
 async function pollJob() {
-  if (!state.activeJob || !state.project) return;
+  if (!state.activeJob || !state.activeJobProjectId) return;
+  const trackedJobId = state.activeJob.id;
+  const trackedProjectId = state.activeJobProjectId;
+  const trackedProjectName = state.activeJobProjectName;
   try {
-    const job = await api(`/api/projects/${state.project.id}/jobs/${state.activeJob.id}`);
+    const job = await api(`/api/projects/${trackedProjectId}/jobs/${trackedJobId}`);
+    if (state.activeJob?.id !== trackedJobId || String(state.activeJobProjectId) !== String(trackedProjectId)) return;
     state.activeJob = job;
     updateJobPanel(job);
-    if (["queued", "running", "cancelling"].includes(job.state)) {
+    if (activeJobStates.has(job.state)) {
       state.pollTimer = setTimeout(pollJob, 1100);
       return;
     }
+
+    const viewingTrackedProject = !workspaceView.hidden
+      && String(state.project?.id) === String(trackedProjectId);
+
     if (job.state === "completed") {
-      state.project = await api(`/api/projects/${state.project.id}`);
-      renderProject();
-      if (job.kind === "mp4-export") {
-        const artifact = state.project.exports.find((item) => item.format === "mp4");
-        if (artifact) showExportComplete(artifact);
-      } else if (job.kind === "overlap-analysis" && job.result) {
-        showOverlapProposal(job.result);
-      } else if (job.kind === "speaker-reanalysis" && job.result) {
-        showSpeakerProposal(job.result, job.id);
-      } else if (job.kind === "transcript-repair" && job.result) {
-        showTranscriptProposal(job.result, job.id);
+      const completedProject = await api(`/api/projects/${trackedProjectId}`);
+      if (viewingTrackedProject) {
+        state.project = completedProject;
+        renderProject();
+        if (job.kind === "mp4-export") {
+          const artifact = state.project.exports.find((item) => item.format === "mp4");
+          if (artifact) showExportComplete(artifact);
+        } else if (job.kind === "overlap-analysis" && job.result) {
+          showOverlapProposal(job.result);
+        } else if (job.kind === "speaker-reanalysis" && job.result) {
+          showSpeakerProposal(job.result, job.id);
+        } else if (job.kind === "transcript-repair" && job.result) {
+          showTranscriptProposal(job.result, job.id);
+        } else {
+          toast("Automatic captions are ready.");
+        }
       } else {
-        toast("Automatic captions are ready.");
+        if (!homeView.hidden) await loadProjects();
+        toast(`${trackedProjectName} finished processing.`);
       }
     } else if (job.state === "failed") {
-      toast(job.error || "Processing could not be completed.");
+      toast(job.error || `${trackedProjectName} could not be processed.`);
     } else if (job.state === "cancelled") {
-      toast("Processing cancelled. Saved work was not changed.");
+      toast(`Processing cancelled for ${trackedProjectName}. Saved work was not changed.`);
     }
-    setTimeout(() => { $("#jobPanel").hidden = true; }, 1800);
+
+    const finishedJobId = job.id;
+    setTimeout(() => {
+      if (state.activeJob?.id !== finishedJobId) return;
+      $("#jobPanel").hidden = true;
+      state.activeJob = null;
+      state.activeJobProjectId = null;
+      state.activeJobProjectName = "";
+      syncActiveJobIndicators();
+    }, 1800);
   } catch (error) { toast(error.message); }
 }
 
 function updateJobPanel(job) {
+  $("#jobProjectName").textContent = state.activeJobProjectName ? `Project: ${state.activeJobProjectName}` : "";
   $("#jobStage").textContent = job.stage;
   $("#jobMessage").textContent = job.message || job.state;
   $("#jobProgress").value = job.progress;
   $("#jobProgress").textContent = `${job.progress}%`;
   $("#jobPercent").textContent = `${job.progress}%`;
-  $("#cancelJob").hidden = !["queued", "running", "cancelling"].includes(job.state);
+  $("#cancelJob").hidden = !activeJobStates.has(job.state);
   $("#cancelJob").disabled = job.state === "cancelling";
   $("#cancelJob").textContent = job.state === "cancelling" ? "Cancelling…" : "Cancel";
+  syncActiveJobIndicators();
 }
 
 async function cancelJob() {
-  if (!state.activeJob) return;
+  if (!state.activeJob || !state.activeJobProjectId) return;
   try {
-    state.activeJob = await api(`/api/projects/${state.project.id}/jobs/${state.activeJob.id}/cancel`, { method: "POST" });
+    state.activeJob = await api(`/api/projects/${state.activeJobProjectId}/jobs/${state.activeJob.id}/cancel`, { method: "POST" });
     updateJobPanel(state.activeJob);
     toast("Cancellation requested…");
   } catch (error) { toast(error.message); }
@@ -1195,6 +1276,12 @@ async function saveSpeakerNames(event) {
 }
 
 async function duplicateProject(id) {
+  const projectToDuplicate = state.projects.find((item) => String(item.id) === String(id));
+  if (projectHasActiveJob(id)) {
+    toast(activeJobDuplicationMessage(projectToDuplicate?.name), "error");
+    return;
+  }
+
   try {
     const project = await api(`/api/projects/${id}/duplicate`, { method: "POST" });
     toast("Project duplicated.");
@@ -1206,6 +1293,12 @@ async function duplicateProject(id) {
 function openDeleteProjectDialog(id, triggerButton) {
   const project = state.projects.find((item) => item.id === id);
   if (!project) return;
+
+  if (projectHasActiveJob(id)) {
+    toast(activeJobDeletionMessage(project.name), "error");
+    triggerButton?.focus();
+    return;
+  }
 
   state.deleteProjectId = id;
   state.deleteTriggerButton = triggerButton;
@@ -1223,6 +1316,15 @@ async function handleDeleteProjectDialogClose() {
   const confirmed = dialog.returnValue === "confirm" && Boolean(projectId);
 
   if (!confirmed) {
+    state.deleteProjectId = null;
+    state.deleteTriggerButton = null;
+    if (triggerButton?.isConnected) triggerButton.focus();
+    return;
+  }
+
+  const project = state.projects.find((item) => String(item.id) === String(projectId));
+  if (projectHasActiveJob(projectId)) {
+    toast(activeJobDeletionMessage(project?.name), "error");
     state.deleteProjectId = null;
     state.deleteTriggerButton = null;
     if (triggerButton?.isConnected) triggerButton.focus();
@@ -1255,6 +1357,10 @@ async function handleDeleteProjectDialogClose() {
 
 function openDeleteAllProjectsDialog() {
   if (!state.projects.length) return;
+  if (isActiveJob()) {
+    toast(activeJobDeletionMessage(state.activeJobProjectName, true), "error");
+    return;
+  }
   const dialog = $("#deleteAllConfirmDialog");
   $("#deleteAllProjectCount").textContent = `${state.projects.length} ${state.projects.length === 1 ? "project" : "projects"}`;
   dialog.returnValue = "";
@@ -1264,6 +1370,11 @@ function openDeleteAllProjectsDialog() {
 async function handleDeleteAllProjectsDialogClose() {
   const dialog = $("#deleteAllConfirmDialog");
   if (dialog.returnValue !== "confirm") return;
+
+  if (isActiveJob()) {
+    toast(activeJobDeletionMessage(state.activeJobProjectName, true), "error");
+    return;
+  }
 
   const confirmButton = $("#confirmDeleteAllProjects");
   const cancelButton = $("#cancelDeleteAllProjects");
@@ -1391,11 +1502,40 @@ function relativeDate(value) {
   }
 }
 
-let toastTimer;
-function toast(message) {
-  const element = $("#toast");
-  element.textContent = message;
-  element.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { element.hidden = true; }, 5000);
+function toast(message, type = "info") {
+  const region = $("#notificationRegion");
+  if (!region) return;
+
+  const notification = document.createElement("div");
+  notification.className = `notification notification-${type}`;
+  notification.setAttribute("role", type === "error" ? "alert" : "status");
+
+  const icon = document.createElement("span");
+  icon.className = "notification-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = type === "error" ? "!" : "i";
+
+  const text = document.createElement("p");
+  text.className = "notification-message";
+  text.textContent = message;
+
+  const dismissButton = document.createElement("button");
+  dismissButton.type = "button";
+  dismissButton.className = "notification-dismiss";
+  dismissButton.setAttribute("aria-label", "Dismiss notification");
+  dismissButton.textContent = "×";
+
+  notification.append(icon, text, dismissButton);
+  region.append(notification);
+  requestAnimationFrame(() => notification.classList.add("is-visible"));
+
+  let removalTimer;
+  const dismiss = () => {
+    clearTimeout(removalTimer);
+    notification.classList.remove("is-visible");
+    setTimeout(() => notification.remove(), 180);
+  };
+
+  dismissButton.addEventListener("click", dismiss);
+  removalTimer = setTimeout(dismiss, 5000);
 }
