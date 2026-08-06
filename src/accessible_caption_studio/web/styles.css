@@ -272,11 +272,35 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
 }
 
 .workspace { padding: 0 clamp(1rem, 3vw, 2.5rem) 2rem; }
+.job-panel-anchor { height: 1px; margin-bottom: -1px; pointer-events: none; }
 .workspace-bar { min-height: 76px; display: grid; grid-template-columns: 160px minmax(200px, 1fr) auto; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }
 .project-title { max-width: 520px; justify-self: center; border-color: transparent; background: transparent; font-size: 1.15rem; font-weight: 800; text-align: center; }
 .project-title:hover, .project-title:focus { background: var(--control); border-color: #aeb9ce; }
 .save-status { color: var(--teal); font-size: .84rem; }
-.job-panel { max-width: 1050px; margin: 1rem auto; background: var(--sky); border: 1px solid #b9c9ef; border-radius: 12px; padding: .8rem 1rem; display: grid; grid-template-columns: 1fr minmax(140px, 300px) auto; align-items: center; gap: 1rem; }
+.job-panel {
+  position: sticky;
+  top: calc(76px + .75rem);
+  z-index: 19;
+  max-width: 1050px;
+  margin: 1rem auto;
+  background: var(--sky);
+  border: 1px solid #b9c9ef;
+  border-radius: 12px;
+  padding: .8rem 1rem;
+  display: grid;
+  grid-template-columns: 1fr minmax(140px, 300px) auto;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 10px 30px rgba(31, 49, 94, .16);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.job-panel.is-stuck {
+  background: color-mix(in srgb, var(--sky) 60%, transparent);
+  border-color: color-mix(in srgb, #b9c9ef 88%, transparent);
+  box-shadow: 0 10px 30px rgba(31, 49, 94, .12);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
 .job-panel strong, .job-panel span { display: block; }
 .job-panel span { color: var(--muted); font-size: .84rem; margin-top: .2rem; }
 progress { width: 100%; accent-color: var(--blue); }

@@ -40,6 +40,7 @@ async function init() {
   restoreBrowserSignIn();
   restoreTranscriptionQuality();
   bindEvents();
+  setupJobPanelStickiness();
   updateFollowPlaybackButton();
   await loadProjects();
 }
@@ -103,6 +104,33 @@ function bindEvents() {
   ["wheel", "touchstart"].forEach((eventName) =>
     $("#cueList").addEventListener(eventName, suspendTimelineFollowing, { passive: true })
   );
+}
+
+function setupJobPanelStickiness() {
+  const panel = $("#jobPanel");
+  const anchor = $("#jobPanelAnchor");
+
+  const updateStuckState = () => {
+    if (panel.hidden || workspaceView.hidden) {
+      panel.classList.remove("is-stuck");
+      return;
+    }
+
+    const panelStyle = getComputedStyle(panel);
+    const stickyTop = Number.parseFloat(panelStyle.top) || 0;
+    const marginTop = Number.parseFloat(panelStyle.marginTop) || 0;
+    const naturalPanelTop = anchor.getBoundingClientRect().bottom + window.scrollY + marginTop;
+    const isStuck = window.scrollY + stickyTop >= naturalPanelTop - 0.5;
+    panel.classList.toggle("is-stuck", isStuck);
+  };
+
+  window.addEventListener("scroll", updateStuckState, { passive: true });
+  window.addEventListener("resize", updateStuckState);
+  new MutationObserver(updateStuckState).observe(panel, {
+    attributes: true,
+    attributeFilter: ["hidden"],
+  });
+  requestAnimationFrame(updateStuckState);
 }
 
 function applyTheme(theme, persist = true) {
