@@ -882,13 +882,77 @@ function updateFileLabel() {
   $("#dropZone > span:last-of-type").textContent = formatBytes(file.size);
 }
 
+function apiErrorFieldLabel(value) {
+  return String(value || "request")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function apiValidationErrorMessage(issue) {
+  if (typeof issue === "string") return issue.trim();
+  if (!issue || typeof issue !== "object") return "";
+
+  const location = Array.isArray(issue.loc)
+    ? issue.loc.filter((part) => !["body", "query", "path"].includes(String(part)))
+    : [];
+  const field = location.length ? String(location[location.length - 1]) : "";
+  const message = String(issue.message || issue.msg || issue.error || "").trim();
+
+  if (field === "media" && /field required/i.test(message)) {
+    return "Choose a video or audio file before creating captions.";
+  }
+  if (field === "captions") {
+    return "The optional caption file could not be read. Choose an SRT or VTT file and try again.";
+  }
+  if (field === "transcription_quality") {
+    return "Choose a valid transcription quality and try again.";
+  }
+  if (!message) return "";
+  return field ? `${apiErrorFieldLabel(field)}: ${message}` : message;
+}
+
+function apiErrorMessage(payload, fallback) {
+  const detail = payload && typeof payload === "object" && "detail" in payload
+    ? payload.detail
+    : payload;
+
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+
+  if (Array.isArray(detail)) {
+    const messages = detail.map(apiValidationErrorMessage).filter(Boolean);
+    if (messages.length) return [...new Set(messages)].join(" ");
+  }
+
+  if (detail && typeof detail === "object") {
+    for (const key of ["message", "error", "title"]) {
+      if (typeof detail[key] === "string" && detail[key].trim()) return detail[key].trim();
+    }
+    if (detail.detail !== undefined) {
+      const nested = apiErrorMessage(detail.detail, "");
+      if (nested) return nested;
+    }
+    try {
+      const serialized = JSON.stringify(detail);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch (_) { /* Use the request fallback below. */ }
+  }
+
+  return fallback;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
-    let detail = `Request failed (${response.status})`;
+    const fallback = `Request failed (${response.status})`;
+    let detail = fallback;
     try {
-      const payload = await response.json();
-      detail = payload.detail?.message || payload.detail || detail;
+      const body = await response.text();
+      if (body) {
+        let payload = body;
+        try { payload = JSON.parse(body); }
+        catch (_) { /* A plain-text server error is already readable. */ }
+        detail = apiErrorMessage(payload, fallback);
+      }
     } catch (_) { /* Keep the status message. */ }
     throw new Error(detail);
   }
@@ -999,10 +1063,14 @@ function smallAction(label, handler, danger = false) {
 async function uploadMedia(event) {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!$("#mediaInput").files[0]) return;
+  const mediaFile = $("#mediaInput").files[0];
+  if (!mediaFile) return;
   setBusy(form, true, "Importing…");
   try {
-    const formData = new FormData(form);
+    const formData = new FormData();
+    formData.append("media", mediaFile, mediaFile.name);
+    const captionFile = $("#captionInput").files[0];
+    if (captionFile) formData.append("captions", captionFile, captionFile.name);
     formData.set("transcription_quality", $("#transcriptionQualitySetting").value);
     const payload = await api("/api/projects/upload", { method: "POST", body: formData });
     state.project = payload.project;
@@ -1010,7 +1078,7 @@ async function uploadMedia(event) {
     if (payload.job) monitorJob(payload.job);
     form.reset();
   } catch (error) {
-    toast(error.message);
+    toast(error.message || "The selected file could not be imported.", "error");
   } finally {
     setBusy(form, false);
   }
