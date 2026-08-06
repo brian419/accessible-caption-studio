@@ -20,6 +20,12 @@ const state = {
   deleteProjectId: null,
   deleteTriggerButton: null,
   captionSamplePreview: false,
+  captionFonts: [],
+  captionFontsLoaded: false,
+  captionFontsLoading: false,
+  captionFontError: "",
+  captionFontFilter: "all",
+  captionFontVisibleCount: 80,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -35,11 +41,16 @@ const youtubeCookieBrowserStorageKey = "accessible-caption-youtube-cookie-browse
 const transcriptionQualityStorageKey = "accessible-caption-transcription-quality";
 const activeJobStates = new Set(["queued", "running", "cancelling"]);
 const captionStyleStoragePrefix = "accessible-caption-style:";
+const captionFontFavoritesStorageKey = "accessible-caption-font-favorites";
+const captionFontRecentsStorageKey = "accessible-caption-font-recents";
+const captionFontRenderBatchSize = 80;
 const defaultCaptionStyle = Object.freeze({
   preset: "classic",
   font_family: "Arial",
+  font_style: "Bold",
   bold: true,
   font_size_percent: 7.5,
+  max_width_percent: 88,
   text_color: "#FFFFFF",
   background_color: "#000000",
   background_opacity: 0.78,
@@ -69,6 +80,7 @@ const captionStylePresets = Object.freeze({
     ...defaultCaptionStyle,
     preset: "clean",
     font_family: "Helvetica",
+    font_style: "Bold",
     font_size_percent: 7.0,
     background_color: "#111827",
     background_opacity: 0.55,
@@ -80,6 +92,7 @@ const captionStylePresets = Object.freeze({
     ...defaultCaptionStyle,
     preset: "broadcast",
     font_family: "Georgia",
+    font_style: "Bold",
     font_size_percent: 7.6,
     background_color: "#172554",
     background_opacity: 0.88,
@@ -178,15 +191,53 @@ function normalizedHex(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value).toUpperCase() : fallback;
 }
 
+function normalizedCaptionFontName(value, fallback, maximumLength) {
+  const cleaned = String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, maximumLength) : fallback;
+}
+
+function captionFontStyleDetails(value) {
+  const name = normalizedCaptionFontName(value, "Regular", 80);
+  const normalized = name.toLowerCase().replace(/[-_]+/g, " ");
+  let weight = 400;
+  if (/thin|hairline/.test(normalized)) weight = 100;
+  else if (/extra light|ultra light|extralight|ultralight/.test(normalized)) weight = 200;
+  else if (/light/.test(normalized)) weight = 300;
+  else if (/medium/.test(normalized)) weight = 500;
+  else if (/semi bold|semibold|demi bold|demibold/.test(normalized)) weight = 600;
+  else if (/extra bold|extrabold|ultra bold/.test(normalized)) weight = 800;
+  else if (/black|heavy/.test(normalized)) weight = 900;
+  else if (/bold/.test(normalized)) weight = 700;
+  return {
+    name,
+    weight,
+    italic: /italic|oblique/.test(normalized),
+  };
+}
+
+function captionFontFamilyCss(value) {
+  const escaped = normalizedCaptionFontName(value, defaultCaptionStyle.font_family, 120)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\"');
+  return `"${escaped}", Arial, sans-serif`;
+}
+
 function normalizeCaptionStyle(value = {}) {
   const style = { ...defaultCaptionStyle, ...(value || {}) };
-  const fonts = ["Arial", "Helvetica", "Verdana", "Georgia", "Courier New"];
   const presets = ["classic", "high_contrast", "clean", "broadcast", "custom"];
+  const fontFamily = normalizedCaptionFontName(style.font_family, defaultCaptionStyle.font_family, 120);
+  const fontStyle = normalizedCaptionFontName(
+    style.font_style,
+    style.bold === false ? "Regular" : defaultCaptionStyle.font_style,
+    80,
+  );
   return {
     preset: presets.includes(style.preset) ? style.preset : "custom",
-    font_family: fonts.includes(style.font_family) ? style.font_family : defaultCaptionStyle.font_family,
-    bold: Boolean(style.bold),
+    font_family: fontFamily,
+    font_style: fontStyle,
+    bold: captionFontStyleDetails(fontStyle).weight >= 600,
     font_size_percent: clampNumber(style.font_size_percent, 4, 12, defaultCaptionStyle.font_size_percent),
+    max_width_percent: clampNumber(style.max_width_percent, 40, 96, defaultCaptionStyle.max_width_percent),
     text_color: normalizedHex(style.text_color, defaultCaptionStyle.text_color),
     background_color: normalizedHex(style.background_color, defaultCaptionStyle.background_color),
     background_opacity: clampNumber(style.background_opacity, 0, 1, defaultCaptionStyle.background_opacity),
@@ -225,6 +276,37 @@ function bindCaptionStyleControls() {
     const eventName = control.matches('input[type="range"], input[type="color"]') ? "input" : "change";
     control.addEventListener(eventName, updateCaptionStyleFromControls);
   });
+  $("#captionFontButton").addEventListener("click", toggleCaptionFontPicker);
+  $("#captionFontSearch").addEventListener("input", () => {
+    resetCaptionFontRenderWindow();
+    renderCaptionFontList();
+  });
+  $("#captionFontClearSearch").addEventListener("click", () => {
+    $("#captionFontSearch").value = "";
+    resetCaptionFontRenderWindow();
+    renderCaptionFontList();
+    $("#captionFontSearch").focus();
+  });
+  $("#captionFontClose").addEventListener("click", closeCaptionFontPicker);
+  $("#captionFontDialog").addEventListener("close", () => {
+    $("#captionFontButton").setAttribute("aria-expanded", "false");
+  });
+  $("#captionFontDialog").addEventListener("click", (event) => {
+    if (event.target === $("#captionFontDialog")) closeCaptionFontPicker();
+  });
+  $("#captionFontSearch").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const first = $("#captionFontList [data-font-family]");
+    if (first) {
+      event.preventDefault();
+      chooseCaptionFont(first.dataset.fontFamily);
+    }
+  });
+  document.querySelectorAll("[data-font-filter]").forEach((button) => {
+    button.addEventListener("click", () => setCaptionFontFilter(button.dataset.fontFilter));
+  });
+  $("#captionFontList").addEventListener("click", handleCaptionFontListClick);
+  $("#captionFontList").addEventListener("scroll", loadMoreCaptionFontsOnScroll, { passive: true });
   $("#captionPreviewSample").addEventListener("change", (event) => {
     state.captionSamplePreview = event.target.checked;
     syncPlayback();
@@ -238,6 +320,264 @@ function bindCaptionStyleControls() {
     storeCaptionStyle(state.project.id, state.project.caption_style);
     scheduleSave();
   });
+}
+
+
+function readCaptionFontList(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string").slice(0, 40) : [];
+  } catch (_) { return []; }
+}
+
+function writeCaptionFontList(key, values) {
+  try { localStorage.setItem(key, JSON.stringify(values)); }
+  catch (_) { /* Font browsing still works without saved favorites. */ }
+}
+
+function captionFontRecord(family) {
+  const normalized = String(family || "").toLocaleLowerCase();
+  return state.captionFonts.find((font) => font.family.toLocaleLowerCase() === normalized) || null;
+}
+
+function captionFontStyles(family) {
+  const record = captionFontRecord(family);
+  const current = state.project ? normalizeCaptionStyle(state.project.caption_style).font_style : "Regular";
+  return record && record.styles.length ? record.styles : [current];
+}
+
+function preferredCaptionFontStyle(styles, requested, preferBold) {
+  const exact = styles.find((style) => style.toLocaleLowerCase() === String(requested || "").toLocaleLowerCase());
+  if (exact) return exact;
+  const preference = preferBold
+    ? [/^bold$/i, /semi.*bold|demi.*bold/i, /bold/i, /black|heavy/i]
+    : [/^regular$/i, /^book$/i, /^normal$/i, /regular|book|normal/i];
+  for (const pattern of preference) {
+    const match = styles.find((style) => pattern.test(style));
+    if (match) return match;
+  }
+  return styles[0] || (preferBold ? "Bold" : "Regular");
+}
+
+function renderCaptionFontStyleOptions() {
+  if (!state.project) return;
+  const style = normalizeCaptionStyle(state.project.caption_style);
+  const select = $("#captionFontStyle");
+  const styles = captionFontStyles(style.font_family);
+  const selected = preferredCaptionFontStyle(styles, style.font_style, style.bold);
+  select.replaceChildren(...styles.map((fontStyle) => {
+    const option = document.createElement("option");
+    option.value = fontStyle;
+    option.textContent = fontStyle;
+    return option;
+  }));
+  select.value = selected;
+  if (style.font_style !== selected) {
+    state.project.caption_style = normalizeCaptionStyle({ ...style, font_style: selected });
+  }
+}
+
+function renderCaptionFontButton() {
+  if (!state.project) return;
+  const style = normalizeCaptionStyle(state.project.caption_style);
+  const details = captionFontStyleDetails(style.font_style);
+  $("#captionFontFamily").value = style.font_family;
+  const name = $("#captionFontButtonName");
+  name.textContent = style.font_family;
+  name.style.fontFamily = captionFontFamilyCss(style.font_family);
+  name.style.fontWeight = String(details.weight);
+  name.style.fontStyle = details.italic ? "italic" : "normal";
+  $("#captionFontButtonMeta").textContent = style.font_style;
+}
+
+async function loadCaptionFonts() {
+  if (state.captionFontsLoaded || state.captionFontsLoading) return;
+  state.captionFontsLoading = true;
+  state.captionFontError = "";
+  $("#captionFontResultsCount").textContent = "Scanning installed fonts…";
+  try {
+    const result = await api("/api/caption-fonts");
+    state.captionFonts = Array.isArray(result.fonts)
+      ? result.fonts
+        .filter((font) => font && typeof font.family === "string")
+        .map((font) => ({
+          family: normalizedCaptionFontName(font.family, "", 120),
+          styles: Array.isArray(font.styles) && font.styles.length
+            ? font.styles.map((style) => normalizedCaptionFontName(style, "Regular", 80))
+            : ["Regular"],
+        }))
+        .filter((font) => font.family)
+      : [];
+    state.captionFontsLoaded = true;
+    $("#captionFontCount").textContent = result.export_compatible === false
+      ? `${state.captionFonts.length} fallback fonts · Font scan unavailable`
+      : `${state.captionFonts.length} installed export-ready fonts`;
+    renderCaptionFontStyleOptions();
+    renderCaptionFontButton();
+    renderCaptionFontList();
+  } catch (error) {
+    state.captionFontError = error.message || "Installed fonts could not be loaded.";
+    $("#captionFontCount").textContent = "Font library unavailable";
+    $("#captionFontResultsCount").textContent = state.captionFontError;
+    renderCaptionFontList();
+  } finally {
+    state.captionFontsLoading = false;
+  }
+}
+
+async function toggleCaptionFontPicker() {
+  const dialog = $("#captionFontDialog");
+  if (dialog.open) {
+    closeCaptionFontPicker();
+    return;
+  }
+  dialog.showModal();
+  $("#captionFontButton").setAttribute("aria-expanded", "true");
+  resetCaptionFontRenderWindow();
+  await loadCaptionFonts();
+  renderCaptionFontList();
+  requestAnimationFrame(() => $("#captionFontSearch").focus());
+}
+
+function closeCaptionFontPicker() {
+  const dialog = $("#captionFontDialog");
+  if (!dialog || !dialog.open) return;
+  dialog.close();
+}
+
+function resetCaptionFontRenderWindow() {
+  state.captionFontVisibleCount = captionFontRenderBatchSize;
+  const list = $("#captionFontList");
+  if (list) list.scrollTop = 0;
+}
+
+function setCaptionFontFilter(filter) {
+  state.captionFontFilter = ["all", "recent", "favorites"].includes(filter) ? filter : "all";
+  document.querySelectorAll("[data-font-filter]").forEach((button) => {
+    button.setAttribute("aria-selected", String(button.dataset.fontFilter === state.captionFontFilter));
+  });
+  resetCaptionFontRenderWindow();
+  renderCaptionFontList();
+}
+
+function loadMoreCaptionFontsOnScroll(event) {
+  const list = event.currentTarget;
+  if (list.scrollTop + list.clientHeight < list.scrollHeight - 180) return;
+  const total = Number(list.dataset.totalFonts || 0);
+  if (state.captionFontVisibleCount >= total) return;
+  state.captionFontVisibleCount = Math.min(total, state.captionFontVisibleCount + captionFontRenderBatchSize);
+  renderCaptionFontList({ preserveScroll: true });
+}
+
+function renderCaptionFontList({ preserveScroll = false } = {}) {
+  const list = $("#captionFontList");
+  if (!list) return;
+  const previousScrollTop = preserveScroll ? list.scrollTop : 0;
+  list.replaceChildren();
+  if (state.captionFontsLoading) {
+    $("#captionFontResultsCount").textContent = "Scanning installed fonts…";
+    $("#captionFontEmpty").hidden = true;
+    return;
+  }
+  if (state.captionFontError) {
+    $("#captionFontResultsCount").textContent = state.captionFontError;
+    $("#captionFontEmpty").hidden = true;
+    return;
+  }
+  const query = $("#captionFontSearch").value.trim().toLocaleLowerCase();
+  const favorites = readCaptionFontList(captionFontFavoritesStorageKey);
+  const recents = readCaptionFontList(captionFontRecentsStorageKey);
+  let fonts = [...state.captionFonts];
+  if (state.captionFontFilter === "favorites") {
+    fonts = fonts.filter((font) => favorites.includes(font.family));
+  } else if (state.captionFontFilter === "recent") {
+    fonts = recents.map(captionFontRecord).filter(Boolean);
+  }
+  if (query) {
+    fonts = fonts.filter((font) => `${font.family} ${font.styles.join(" ")}`.toLocaleLowerCase().includes(query));
+  }
+
+  const visibleFonts = fonts.slice(0, Math.max(captionFontRenderBatchSize, state.captionFontVisibleCount));
+  const selectedFamily = state.project ? normalizeCaptionStyle(state.project.caption_style).font_family : "";
+  const fragment = document.createDocumentFragment();
+  visibleFonts.forEach((font) => {
+    const row = document.createElement("div");
+    row.className = "caption-font-option";
+    row.classList.toggle("is-selected", font.family === selectedFamily);
+
+    const choose = document.createElement("button");
+    choose.className = "caption-font-option-main";
+    choose.type = "button";
+    choose.dataset.fontFamily = font.family;
+    choose.setAttribute("role", "option");
+    choose.setAttribute("aria-selected", String(font.family === selectedFamily));
+    choose.title = `Choose ${font.family}`;
+    const name = document.createElement("span");
+    name.className = "caption-font-option-name";
+    name.textContent = font.family;
+    choose.append(name);
+
+    const favorite = document.createElement("button");
+    favorite.className = "caption-font-favorite";
+    favorite.type = "button";
+    favorite.dataset.favoriteFont = font.family;
+    const isFavorite = favorites.includes(font.family);
+    favorite.classList.toggle("is-favorite", isFavorite);
+    favorite.setAttribute("aria-label", `${isFavorite ? "Remove" : "Add"} ${font.family} ${isFavorite ? "from" : "to"} favorites`);
+    favorite.setAttribute("aria-pressed", String(isFavorite));
+    favorite.textContent = isFavorite ? "★" : "☆";
+    row.append(choose, favorite);
+    fragment.append(row);
+  });
+  list.append(fragment);
+  list.dataset.totalFonts = String(fonts.length);
+  if (preserveScroll) list.scrollTop = previousScrollTop;
+
+  const shown = visibleFonts.length;
+  $("#captionFontResultsCount").textContent = shown < fonts.length
+    ? `Showing ${shown} of ${fonts.length} fonts`
+    : `${fonts.length} ${fonts.length === 1 ? "font" : "fonts"}`;
+  $("#captionFontEmpty").hidden = fonts.length > 0;
+}
+
+function handleCaptionFontListClick(event) {
+  const favoriteButton = event.target.closest("[data-favorite-font]");
+  if (favoriteButton) {
+    const family = favoriteButton.dataset.favoriteFont;
+    const favorites = readCaptionFontList(captionFontFavoritesStorageKey);
+    const next = favorites.includes(family)
+      ? favorites.filter((item) => item !== family)
+      : [family, ...favorites].slice(0, 40);
+    writeCaptionFontList(captionFontFavoritesStorageKey, next);
+    renderCaptionFontList();
+    return;
+  }
+  const chooseButton = event.target.closest("[data-font-family]");
+  if (!chooseButton || !state.project) return;
+  chooseCaptionFont(chooseButton.dataset.fontFamily);
+}
+
+function chooseCaptionFont(family) {
+  if (!state.project) return;
+  const current = normalizeCaptionStyle(state.project.caption_style);
+  const record = captionFontRecord(family);
+  if (!record) return;
+  const fontStyle = preferredCaptionFontStyle(record.styles, current.font_style, current.bold);
+  state.project.caption_style = normalizeCaptionStyle({
+    ...current,
+    preset: "custom",
+    font_family: family,
+    font_style: fontStyle,
+  });
+  const recents = readCaptionFontList(captionFontRecentsStorageKey).filter((item) => item !== family);
+  writeCaptionFontList(captionFontRecentsStorageKey, [family, ...recents].slice(0, 12));
+  $("#captionStylePreset").value = "custom";
+  renderCaptionStyleControls();
+  applyCaptionStyle();
+  syncPlayback();
+  storeCaptionStyle(state.project.id, state.project.caption_style);
+  scheduleSave();
+  closeCaptionFontPicker();
 }
 
 function applyCaptionStylePreset(event) {
@@ -255,8 +595,9 @@ function updateCaptionStyleFromControls() {
   state.project.caption_style = normalizeCaptionStyle({
     preset: "custom",
     font_family: $("#captionFontFamily").value,
-    bold: $("#captionBold").checked,
+    font_style: $("#captionFontStyle").value,
     font_size_percent: $("#captionFontSize").value,
+    max_width_percent: $("#captionMaxWidth").value,
     text_color: $("#captionTextColor").value,
     background_color: $("#captionBackgroundColor").value,
     background_opacity: $("#captionBackgroundOpacity").value,
@@ -284,8 +625,10 @@ function renderCaptionStyleControls() {
   state.project.caption_style = style;
   $("#captionStylePreset").value = style.preset;
   $("#captionFontFamily").value = style.font_family;
-  $("#captionBold").checked = style.bold;
   $("#captionFontSize").value = style.font_size_percent;
+  $("#captionMaxWidth").value = style.max_width_percent;
+  renderCaptionFontStyleOptions();
+  renderCaptionFontButton();
   $("#captionTextColor").value = style.text_color;
   $("#captionBackgroundColor").value = style.background_color;
   $("#captionBackgroundOpacity").value = style.background_opacity;
@@ -309,6 +652,7 @@ function updateCaptionStyleValueLabels() {
   $("#captionPaddingValue").textContent = `${Number($("#captionPadding").value).toFixed(1)}%`;
   $("#captionLineSpacingValue").textContent = `${Number($("#captionLineSpacing").value).toFixed(1)}%`;
   $("#captionVerticalMarginValue").textContent = `${Math.round(Number($("#captionVerticalMargin").value))}%`;
+  $("#captionMaxWidthValue").textContent = `${Math.round(Number($("#captionMaxWidth").value))}%`;
 }
 
 function hexToRgba(hex, opacity) {
@@ -336,12 +680,14 @@ function applyCaptionStyle() {
   const shadow = Math.max(0, videoHeight * style.shadow_size_percent / 100);
   const lineSpacing = Math.max(0, videoHeight * style.line_spacing_percent / 100);
 
-  overlay.style.fontFamily = `"${style.font_family}", Arial, sans-serif`;
-  overlay.style.fontWeight = style.bold ? "700" : "400";
+  const fontDetails = captionFontStyleDetails(style.font_style);
+  overlay.style.fontFamily = captionFontFamilyCss(style.font_family);
+  overlay.style.fontWeight = String(fontDetails.weight);
+  overlay.style.fontStyle = fontDetails.italic ? "italic" : "normal";
   overlay.style.fontSize = `${fontSize}px`;
   overlay.style.lineHeight = `${fontSize}px`;
   overlay.style.color = style.text_color;
-  overlay.style.maxWidth = `${videoWidth * 0.88}px`;
+  overlay.style.maxWidth = `${videoWidth * style.max_width_percent / 100}px`;
   overlay.style.textAlign = style.alignment;
   overlay.style.alignItems = ({ left: "flex-start", center: "center", right: "flex-end" })[style.alignment];
   overlay.style.setProperty("--caption-line-gap", `${lineSpacing}px`);
@@ -388,11 +734,12 @@ function captionWrapMetrics() {
   const padding = Math.max(1, videoHeight * style.padding_percent / 100);
   const outline = Math.max(0, videoHeight * style.outline_size_percent / 100);
   const shadow = Math.max(0, videoHeight * style.shadow_size_percent / 100);
-  const maximumBoxWidth = Math.max(1, videoWidth * 0.88);
+  const maximumBoxWidth = Math.max(1, videoWidth * style.max_width_percent / 100);
   const maximumTextWidth = Math.max(1, maximumBoxWidth - (padding * 2) - (outline * 2) - shadow);
   const context = captionMeasureCanvas.getContext("2d");
   if (!context) return null;
-  context.font = `${style.bold ? "700" : "400"} ${fontSize}px "${style.font_family}", Arial, sans-serif`;
+  const fontDetails = captionFontStyleDetails(style.font_style);
+  context.font = `${fontDetails.italic ? "italic " : ""}${fontDetails.weight} ${fontSize}px ${captionFontFamilyCss(style.font_family)}`;
   return { context, maximumTextWidth };
 }
 

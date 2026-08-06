@@ -192,18 +192,19 @@
                 <option value="custom">Custom</option>
               </select>
             </label>
-            <label for="captionFontFamily">Font
-              <select id="captionFontFamily" data-caption-style>
-                <option value="Arial">Arial</option>
-                <option value="Helvetica">Helvetica</option>
-                <option value="Verdana">Verdana</option>
-                <option value="Georgia">Georgia</option>
-                <option value="Courier New">Courier New</option>
-              </select>
-            </label>
-            <label class="caption-check" for="captionBold">
-              <input id="captionBold" type="checkbox" data-caption-style>
-              <span>Bold caption text</span>
+            <div class="caption-font-field">
+              <span class="caption-font-field-label">Font</span>
+              <input id="captionFontFamily" type="hidden" value="Arial">
+              <button id="captionFontButton" class="caption-font-button" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="captionFontDialog">
+                <span class="caption-font-button-copy">
+                  <strong id="captionFontButtonName">Arial</strong>
+                  <small id="captionFontButtonMeta">Bold</small>
+                </span>
+                <span class="caption-font-button-action">Browse fonts</span>
+              </button>
+            </div>
+            <label for="captionFontStyle">Font style
+              <select id="captionFontStyle" data-caption-style></select>
             </label>
           </div>
 
@@ -256,12 +257,45 @@
             <label for="captionVerticalMargin">Edge distance <output id="captionVerticalMarginValue"></output>
               <input id="captionVerticalMargin" type="range" min="2" max="25" step="1" data-caption-style>
             </label>
-            <p class="caption-style-note">The available controls are limited to properties that the browser preview and local FFmpeg export can reproduce closely.</p>
+            <label for="captionMaxWidth">Maximum caption width <output id="captionMaxWidthValue"></output>
+              <input id="captionMaxWidth" type="range" min="40" max="96" step="1" data-caption-style>
+            </label>
           </div>
         </div>
       </section>
     </section>
   </main>
+
+
+  <dialog id="captionFontDialog" class="caption-font-dialog" aria-labelledby="captionFontDialogTitle">
+    <div class="dialog-card caption-font-dialog-card">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">Installed fonts</p>
+          <h2 id="captionFontDialogTitle">Choose a caption font</h2>
+        </div>
+        <button id="captionFontClose" class="icon-button" type="button" aria-label="Close font browser">✕</button>
+      </div>
+      <div class="caption-font-search-row">
+        <label class="caption-font-search" for="captionFontSearch">
+          <span class="sr-only">Search installed fonts</span>
+          <input id="captionFontSearch" type="search" placeholder="Search installed fonts" autocomplete="off">
+        </label>
+        <button id="captionFontClearSearch" class="secondary caption-font-clear" type="button">Clear</button>
+      </div>
+      <div class="caption-font-filter-tabs" role="tablist" aria-label="Filter fonts">
+        <button type="button" role="tab" data-font-filter="all" aria-selected="true">All fonts</button>
+        <button type="button" role="tab" data-font-filter="recent" aria-selected="false">Recent</button>
+        <button type="button" role="tab" data-font-filter="favorites" aria-selected="false">Favorites</button>
+      </div>
+      <div class="caption-font-results-heading">
+        <strong id="captionFontResultsCount">Loading fonts…</strong>
+        <span id="captionFontCount" class="font-library-count" role="status">Open the browser to scan installed fonts</span>
+      </div>
+      <div id="captionFontList" class="caption-font-list" role="listbox" aria-label="Installed caption fonts"></div>
+      <p id="captionFontEmpty" class="caption-font-empty" hidden>No fonts match this search.</p>
+    </div>
+  </dialog>
 
   <dialog id="settingsDialog">
     <form method="dialog" class="dialog-card">

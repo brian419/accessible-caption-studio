@@ -4,7 +4,9 @@ import json
 import mimetypes
 import re
 import shutil
+import subprocess
 from collections.abc import Callable
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -22,6 +24,7 @@ from .jobs import JobManager
 from .media import download_youtube, extract_audio, inspect_media
 from .models import (
     CaptionCue,
+    CaptionStyle,
     ExportArtifact,
     FusionSummary,
     JobState,
@@ -49,6 +52,7 @@ class ProjectUpdate(BaseModel):
     cues: list[CaptionCue] | None = None
     speaker_names: dict[str, str] | None = None
     transcription_quality: Literal["fast", "accurate"] | None = None
+    caption_style: CaptionStyle | None = None
 
 
 class OverlapRequest(BaseModel):
@@ -58,6 +62,84 @@ class OverlapRequest(BaseModel):
 
 class SpeakerReanalysisRequest(BaseModel):
     expected_speaker_count: int | None = Field(default=None, ge=1, le=8)
+
+
+_FALLBACK_CAPTION_FONTS = (
+    {"family": "Arial", "styles": ["Regular", "Italic", "Bold", "Bold Italic"]},
+    {"family": "Helvetica", "styles": ["Regular", "Oblique", "Bold", "Bold Oblique"]},
+    {"family": "Verdana", "styles": ["Regular", "Italic", "Bold", "Bold Italic"]},
+    {"family": "Georgia", "styles": ["Regular", "Italic", "Bold", "Bold Italic"]},
+    {"family": "Courier New", "styles": ["Regular", "Italic", "Bold", "Bold Italic"]},
+)
+
+
+def _font_style_sort_key(style: str) -> tuple[int, int, str]:
+    normalized = style.casefold()
+    if any(marker in normalized for marker in ("thin", "hairline")):
+        weight = 100
+    elif any(marker in normalized for marker in ("extra light", "ultra light", "extralight", "ultralight")):
+        weight = 200
+    elif "light" in normalized:
+        weight = 300
+    elif any(marker in normalized for marker in ("medium",)):
+        weight = 500
+    elif any(marker in normalized for marker in ("semi bold", "semibold", "demi bold", "demibold")):
+        weight = 600
+    elif any(marker in normalized for marker in ("black", "heavy", "extra bold", "extrabold", "ultra bold")):
+        weight = 900
+    elif "bold" in normalized:
+        weight = 700
+    else:
+        weight = 400
+    italic = 1 if any(marker in normalized for marker in ("italic", "oblique")) else 0
+    return weight, italic, normalized
+
+
+@lru_cache(maxsize=1)
+def _installed_caption_fonts() -> dict[str, Any]:
+    executable = shutil.which("fc-list")
+    families: dict[str, set[str]] = {}
+    if executable:
+        try:
+            result = subprocess.run(
+                [executable, "--format=%{family[0]}\t%{style}\n"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    family, separator, raw_style = line.partition("\t")
+                    family = " ".join(family.split()).strip()
+                    style = " ".join(raw_style.split(",", 1)[0].split()).strip() or "Regular"
+                    if not separator or not family or any(ord(character) < 32 for character in family):
+                        continue
+                    normalized_style = style.casefold().replace("-", " ")
+                    if any(
+                        marker in normalized_style
+                        for marker in ("condensed", "expanded", "narrow", "wide", "compressed")
+                    ):
+                        continue
+                    families.setdefault(family, set()).add(style)
+        except (OSError, subprocess.SubprocessError):
+            families = {}
+
+    if families:
+        fonts = [
+            {
+                "family": family,
+                "styles": sorted(styles, key=_font_style_sort_key),
+            }
+            for family, styles in sorted(families.items(), key=lambda item: item[0].casefold())
+        ]
+        return {"fonts": fonts, "source": "fontconfig", "export_compatible": True}
+
+    return {
+        "fonts": [dict(font) for font in _FALLBACK_CAPTION_FONTS],
+        "source": "fallback",
+        "export_compatible": False,
+    }
 
 
 def create_app(storage_root: Path | None = None) -> FastAPI:
@@ -96,6 +178,14 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             "speaker_engine": "local-ecapa",
             "speaker_token_required": False,
             "visual_speaker_engine": "sface-ecapa-v1",
+        }
+
+    @app.get("/api/caption-fonts")
+    def caption_fonts() -> dict[str, Any]:
+        result = _installed_caption_fonts()
+        return {
+            **result,
+            "count": len(result["fonts"]),
         }
 
     @app.get("/api/projects")
@@ -181,6 +271,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             project.speaker_names = request.speaker_names
         if request.transcription_quality is not None:
             project.transcription_quality = request.transcription_quality
+        if request.caption_style is not None:
+            project.caption_style = request.caption_style
         return store.save(project)
 
     @app.delete("/api/projects/{project_id}", status_code=204)
@@ -697,7 +789,15 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         if not any(item.filename == safe for item in project.exports):
             raise HTTPException(status_code=404, detail="Export not found")
         path = store.project_dir(project_id) / "exports" / safe
-        return FileResponse(path, filename=safe)
+        return FileResponse(
+            path,
+            filename=safe,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     @app.get("/api/storage")
     def storage_summary() -> Any:

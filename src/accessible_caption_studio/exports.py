@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -89,25 +90,64 @@ def _ffmpeg_color(value: str) -> str:
 
 
 def _font_pattern(style: CaptionStyle) -> str:
-    return f"{style.font_family}:style=Bold" if style.bold else style.font_family
+    font_style = style.font_style or ("Bold" if style.bold else "Regular")
+    return f"{style.font_family}:style={font_style}"
 
 
-@lru_cache(maxsize=32)
-def _caption_font(font_pattern: str, font_size: int):
-    if ImageFont is None:
-        return None
+@lru_cache(maxsize=128)
+def _font_match(font_pattern: str) -> tuple[Path | None, tuple[str, ...], tuple[str, ...]]:
     try:
         match = subprocess.run(
-            ["fc-match", "-f", "%{file}", font_pattern],
+            ["fc-match", "-f", "%{family}\t%{style}\t%{file}", font_pattern],
             capture_output=True,
             text=True,
             check=False,
+            timeout=5,
         )
-        font_path = match.stdout.strip()
-        if font_path and Path(font_path).is_file():
+        family_value, separator, remainder = match.stdout.strip().partition("\t")
+        style_value, style_separator, file_value = remainder.partition("\t")
+        if match.returncode != 0 or not separator or not style_separator:
+            return None, (), ()
+        font_path = Path(file_value) if file_value and Path(file_value).is_file() else None
+        families = tuple(item.strip() for item in family_value.split(",") if item.strip())
+        styles = tuple(item.strip() for item in style_value.split(",") if item.strip())
+        return font_path, families, styles
+    except (OSError, subprocess.SubprocessError):
+        return None, (), ()
+
+
+def _require_caption_font(style: CaptionStyle) -> None:
+    if not shutil.which("fc-match"):
+        return
+    font_path, families, styles = _font_match(_font_pattern(style))
+    requested_family = style.font_family.casefold()
+    requested_style = (style.font_style or ("Bold" if style.bold else "Regular")).casefold()
+    available_families = {family.casefold() for family in families}
+    available_styles = {font_style.casefold() for font_style in styles}
+    if not font_path or requested_family not in available_families:
+        raise StudioError(
+            "caption_font_unavailable",
+            f'The caption font "{style.font_family}" is no longer installed. '
+            "Choose another font in Customize captions before exporting.",
+        )
+    if requested_style not in available_styles:
+        raise StudioError(
+            "caption_font_style_unavailable",
+            f'The "{style.font_style}" style for "{style.font_family}" is no longer installed. '
+            "Choose another font style before exporting.",
+        )
+
+
+@lru_cache(maxsize=64)
+def _caption_font(font_pattern: str, font_size: int):
+    if ImageFont is None:
+        return None
+    font_path, _families, _styles = _font_match(font_pattern)
+    if font_path:
+        try:
             return ImageFont.truetype(font_path, font_size)
-    except (OSError, ValueError):
-        pass
+        except (OSError, ValueError):
+            pass
     return None
 
 
@@ -121,7 +161,9 @@ def _estimated_text_width(text: str, style: CaptionStyle, font_size: int) -> flo
         "Georgia": 0.02,
         "Courier New": 0.06,
     }.get(style.font_family, 0.0)
+    normalized_style = (style.font_style or "").casefold()
     bold_adjustment = 0.025 if style.bold else 0.0
+    italic_adjustment = 0.012 if any(marker in normalized_style for marker in ("italic", "oblique")) else 0.0
     total = 0.0
     for character in text:
         if character.isspace():
@@ -138,7 +180,7 @@ def _estimated_text_width(text: str, style: CaptionStyle, font_size: int) -> flo
             factor = 0.95
         else:
             factor = 0.57
-        total += factor + family_adjustment + bold_adjustment
+        total += factor + family_adjustment + bold_adjustment + italic_adjustment
     return total * font_size * 1.05
 
 
@@ -176,7 +218,7 @@ def _wrap_export_text(
     padding = max(1, round(video_height * style.padding_percent / 100))
     outline = max(0, round(video_height * style.outline_size_percent / 100))
     shadow = max(0, round(video_height * style.shadow_size_percent / 100))
-    maximum_box_width = max(1.0, video_width * 0.88)
+    maximum_box_width = max(1.0, video_width * style.max_width_percent / 100)
     maximum_text_width = max(
         1.0, maximum_box_width - (padding * 2) - (outline * 2) - shadow
     )
@@ -238,9 +280,15 @@ def _drawtext_filter(
         y = f"h-h*{margin:.4f}-{total_height}+{line_offset}"
 
     font_pattern = _font_pattern(style)
+    font_path, _families, _styles = _font_match(font_pattern)
+    font_option = (
+        f"fontfile='{_escape_filter_value(str(font_path))}'"
+        if font_path
+        else f"font='{_escape_filter_value(style.font_family)}'"
+    )
 
     options = [
-        f"font='{_escape_filter_value(font_pattern)}'",
+        font_option,
         f"textfile='{_escape_filter_value(str(text_path))}'",
         "expansion=none",
         f"fontcolor={_ffmpeg_color(style.text_color)}",
@@ -307,6 +355,7 @@ def export_captioned_mp4(
     require_tools()
     if not project.media or not project.media.has_video:
         raise StudioError("video_required", "A captioned MP4 export requires a video source.")
+    _require_caption_font(project.caption_style)
     source = project_dir / project.media.stored_name
     exports = project_dir / "exports"
     exports.mkdir(exist_ok=True)

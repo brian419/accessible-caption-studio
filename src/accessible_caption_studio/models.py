@@ -127,9 +127,11 @@ class CaptionCue(BaseModel):
 
 class CaptionStyle(BaseModel):
     preset: Literal["classic", "high_contrast", "clean", "broadcast", "custom"] = "classic"
-    font_family: Literal["Arial", "Helvetica", "Verdana", "Georgia", "Courier New"] = "Arial"
+    font_family: str = "Arial"
+    font_style: str | None = None
     bold: bool = True
     font_size_percent: float = Field(default=7.5, ge=4, le=12)
+    max_width_percent: float = Field(default=88, ge=40, le=96)
     text_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
     background_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
     background_opacity: float = Field(default=0.78, ge=0, le=1)
@@ -142,6 +144,28 @@ class CaptionStyle(BaseModel):
     position: Literal["top", "middle", "bottom"] = "bottom"
     alignment: Literal["left", "center", "right"] = "center"
     vertical_margin_percent: float = Field(default=10, ge=2, le=25)
+
+    @field_validator("font_family", "font_style")
+    @classmethod
+    def normalize_font_name(cls, value: str | None, info: Any) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split()).strip()
+        maximum = 120 if info.field_name == "font_family" else 80
+        if not cleaned or len(cleaned) > maximum or any(ord(character) < 32 for character in cleaned):
+            raise ValueError(f"{info.field_name.replace('_', ' ')} is invalid")
+        return cleaned
+
+    @model_validator(mode="after")
+    def synchronize_font_style(self) -> CaptionStyle:
+        if not self.font_style:
+            self.font_style = "Bold" if self.bold else "Regular"
+        normalized = self.font_style.casefold()
+        self.bold = any(
+            marker in normalized
+            for marker in ("bold", "black", "heavy", "demi", "semi")
+        )
+        return self
 
     @field_validator(
         "text_color",
