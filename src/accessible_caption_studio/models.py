@@ -4,7 +4,7 @@ import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -125,6 +125,35 @@ class CaptionCue(BaseModel):
         return value
 
 
+class CaptionStyle(BaseModel):
+    preset: Literal["classic", "high_contrast", "clean", "broadcast", "custom"] = "classic"
+    font_family: Literal["Arial", "Helvetica", "Verdana", "Georgia", "Courier New"] = "Arial"
+    bold: bool = True
+    font_size_percent: float = Field(default=7.5, ge=4, le=12)
+    text_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    background_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
+    background_opacity: float = Field(default=0.78, ge=0, le=1)
+    outline_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
+    outline_size_percent: float = Field(default=0.16, ge=0, le=0.6)
+    shadow_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
+    shadow_size_percent: float = Field(default=0.18, ge=0, le=0.8)
+    padding_percent: float = Field(default=1.0, ge=0.2, le=3)
+    line_spacing_percent: float = Field(default=0.7, ge=0, le=3)
+    position: Literal["top", "middle", "bottom"] = "bottom"
+    alignment: Literal["left", "center", "right"] = "center"
+    vertical_margin_percent: float = Field(default=10, ge=2, le=25)
+
+    @field_validator(
+        "text_color",
+        "background_color",
+        "outline_color",
+        "shadow_color",
+    )
+    @classmethod
+    def normalize_color(cls, value: str) -> str:
+        return value.upper()
+
+
 class Severity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
@@ -182,6 +211,7 @@ class Project(BaseModel):
     speaker_engine: str = "legacy_wavlm"
     fusion_summary: FusionSummary = Field(default_factory=FusionSummary)
     transcription_quality: str = Field(default="accurate", pattern="^(fast|accurate)$")
+    caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
 
     @field_validator("speaker_names")
     @classmethod

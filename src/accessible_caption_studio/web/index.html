@@ -125,7 +125,7 @@
       <div class="studio-grid">
         <section class="preview-panel" aria-labelledby="previewTitle">
           <h2 id="previewTitle" class="sr-only">Media preview</h2>
-          <div class="media-stage">
+          <div id="mediaStage" class="media-stage">
             <video id="mediaPlayer" controls preload="metadata"></video>
             <audio id="audioPlayer" controls preload="metadata" hidden></audio>
             <div id="captionOverlay" class="caption-overlay" aria-hidden="true"></div>
@@ -163,6 +163,103 @@
           <p id="emptyCues" class="empty-state">Captions will appear here when analysis finishes.</p>
         </section>
       </div>
+
+      <section class="caption-style-panel" aria-labelledby="captionStyleTitle">
+        <div class="caption-style-heading">
+          <div>
+            <p class="eyebrow">Caption appearance</p>
+            <h2 id="captionStyleTitle">Customize captions</h2>
+            <p>Changes appear in the video preview immediately and are saved with this project for the captioned MP4 export.</p>
+          </div>
+          <div class="caption-style-heading-actions">
+            <label class="sample-preview-toggle" for="captionPreviewSample">
+              <input id="captionPreviewSample" type="checkbox">
+              <span>Show sample when no caption is active</span>
+            </label>
+            <button id="resetCaptionStyle" class="secondary" type="button">Reset style</button>
+          </div>
+        </div>
+
+        <div class="caption-style-controls">
+          <div class="caption-style-group caption-style-presets">
+            <h3>Starting style</h3>
+            <label for="captionStylePreset">Preset
+              <select id="captionStylePreset">
+                <option value="classic">Classic readable</option>
+                <option value="high_contrast">High contrast</option>
+                <option value="clean">Clean minimal</option>
+                <option value="broadcast">Broadcast blue</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label for="captionFontFamily">Font
+              <select id="captionFontFamily" data-caption-style>
+                <option value="Arial">Arial</option>
+                <option value="Helvetica">Helvetica</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Courier New">Courier New</option>
+              </select>
+            </label>
+            <label class="caption-check" for="captionBold">
+              <input id="captionBold" type="checkbox" data-caption-style>
+              <span>Bold caption text</span>
+            </label>
+          </div>
+
+          <div class="caption-style-group">
+            <h3>Text</h3>
+            <label for="captionFontSize">Size <output id="captionFontSizeValue"></output>
+              <input id="captionFontSize" type="range" min="4" max="12" step="0.1" data-caption-style>
+            </label>
+            <label class="color-control" for="captionTextColor"><span>Text color</span><input id="captionTextColor" type="color" data-caption-style></label>
+            <label class="color-control" for="captionOutlineColor"><span>Outline color</span><input id="captionOutlineColor" type="color" data-caption-style></label>
+            <label for="captionOutlineSize">Outline <output id="captionOutlineSizeValue"></output>
+              <input id="captionOutlineSize" type="range" min="0" max="0.6" step="0.02" data-caption-style>
+            </label>
+            <label for="captionLineSpacing">Line spacing <output id="captionLineSpacingValue"></output>
+              <input id="captionLineSpacing" type="range" min="0" max="3" step="0.1" data-caption-style>
+            </label>
+          </div>
+
+          <div class="caption-style-group">
+            <h3>Background and shadow</h3>
+            <label class="color-control" for="captionBackgroundColor"><span>Background color</span><input id="captionBackgroundColor" type="color" data-caption-style></label>
+            <label for="captionBackgroundOpacity">Background opacity <output id="captionBackgroundOpacityValue"></output>
+              <input id="captionBackgroundOpacity" type="range" min="0" max="1" step="0.01" data-caption-style>
+            </label>
+            <label for="captionPadding">Background padding <output id="captionPaddingValue"></output>
+              <input id="captionPadding" type="range" min="0.2" max="3" step="0.1" data-caption-style>
+            </label>
+            <label class="color-control" for="captionShadowColor"><span>Shadow color</span><input id="captionShadowColor" type="color" data-caption-style></label>
+            <label for="captionShadowSize">Shadow depth <output id="captionShadowSizeValue"></output>
+              <input id="captionShadowSize" type="range" min="0" max="0.8" step="0.02" data-caption-style>
+            </label>
+          </div>
+
+          <div class="caption-style-group">
+            <h3>Placement</h3>
+            <label for="captionPosition">Vertical position
+              <select id="captionPosition" data-caption-style>
+                <option value="top">Top</option>
+                <option value="middle">Middle</option>
+                <option value="bottom">Bottom</option>
+              </select>
+            </label>
+            <label for="captionAlignment">Horizontal alignment
+              <select id="captionAlignment" data-caption-style>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+            <label for="captionVerticalMargin">Edge distance <output id="captionVerticalMarginValue"></output>
+              <input id="captionVerticalMargin" type="range" min="2" max="25" step="1" data-caption-style>
+            </label>
+            <p class="caption-style-note">The available controls are limited to properties that the browser preview and local FFmpeg export can reproduce closely.</p>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 

@@ -19,6 +19,7 @@ const state = {
   playbackCueId: null,
   deleteProjectId: null,
   deleteTriggerButton: null,
+  captionSamplePreview: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -33,6 +34,60 @@ const youtubeBrowserSignInStorageKey = "accessible-caption-youtube-browser-sign-
 const youtubeCookieBrowserStorageKey = "accessible-caption-youtube-cookie-browser";
 const transcriptionQualityStorageKey = "accessible-caption-transcription-quality";
 const activeJobStates = new Set(["queued", "running", "cancelling"]);
+const captionStyleStoragePrefix = "accessible-caption-style:";
+const defaultCaptionStyle = Object.freeze({
+  preset: "classic",
+  font_family: "Arial",
+  bold: true,
+  font_size_percent: 7.5,
+  text_color: "#FFFFFF",
+  background_color: "#000000",
+  background_opacity: 0.78,
+  outline_color: "#000000",
+  outline_size_percent: 0.16,
+  shadow_color: "#000000",
+  shadow_size_percent: 0.18,
+  padding_percent: 1.0,
+  line_spacing_percent: 0.7,
+  position: "bottom",
+  alignment: "center",
+  vertical_margin_percent: 10,
+});
+const captionStylePresets = Object.freeze({
+  classic: { ...defaultCaptionStyle },
+  high_contrast: {
+    ...defaultCaptionStyle,
+    preset: "high_contrast",
+    font_size_percent: 8.2,
+    text_color: "#FFFF00",
+    background_opacity: 0.95,
+    outline_size_percent: 0.2,
+    shadow_size_percent: 0,
+    padding_percent: 1.2,
+  },
+  clean: {
+    ...defaultCaptionStyle,
+    preset: "clean",
+    font_family: "Helvetica",
+    font_size_percent: 7.0,
+    background_color: "#111827",
+    background_opacity: 0.55,
+    outline_size_percent: 0,
+    shadow_size_percent: 0.16,
+    padding_percent: 0.8,
+  },
+  broadcast: {
+    ...defaultCaptionStyle,
+    preset: "broadcast",
+    font_family: "Georgia",
+    font_size_percent: 7.6,
+    background_color: "#172554",
+    background_opacity: 0.88,
+    outline_size_percent: 0.12,
+    shadow_size_percent: 0.14,
+    padding_percent: 1.15,
+  },
+});
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -103,10 +158,308 @@ function bindEvents() {
   $("#discardOverlap").addEventListener("click", discardOverlapProposal);
   $("#discardOverlapTop").addEventListener("click", discardOverlapProposal);
   [mediaPlayer, audioPlayer].forEach((player) => player.addEventListener("timeupdate", syncPlayback));
+  mediaPlayer.addEventListener("loadedmetadata", refreshCaptionLayout);
+  bindCaptionStyleControls();
+  window.addEventListener("resize", refreshCaptionLayout);
+  if (window.ResizeObserver) new ResizeObserver(refreshCaptionLayout).observe($("#mediaStage"));
   document.addEventListener("keydown", playbackKeys);
   ["wheel", "touchstart"].forEach((eventName) =>
     $("#cueList").addEventListener(eventName, suspendTimelineFollowing, { passive: true })
   );
+}
+
+
+function clampNumber(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
+
+function normalizedHex(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value).toUpperCase() : fallback;
+}
+
+function normalizeCaptionStyle(value = {}) {
+  const style = { ...defaultCaptionStyle, ...(value || {}) };
+  const fonts = ["Arial", "Helvetica", "Verdana", "Georgia", "Courier New"];
+  const presets = ["classic", "high_contrast", "clean", "broadcast", "custom"];
+  return {
+    preset: presets.includes(style.preset) ? style.preset : "custom",
+    font_family: fonts.includes(style.font_family) ? style.font_family : defaultCaptionStyle.font_family,
+    bold: Boolean(style.bold),
+    font_size_percent: clampNumber(style.font_size_percent, 4, 12, defaultCaptionStyle.font_size_percent),
+    text_color: normalizedHex(style.text_color, defaultCaptionStyle.text_color),
+    background_color: normalizedHex(style.background_color, defaultCaptionStyle.background_color),
+    background_opacity: clampNumber(style.background_opacity, 0, 1, defaultCaptionStyle.background_opacity),
+    outline_color: normalizedHex(style.outline_color, defaultCaptionStyle.outline_color),
+    outline_size_percent: clampNumber(style.outline_size_percent, 0, .6, defaultCaptionStyle.outline_size_percent),
+    shadow_color: normalizedHex(style.shadow_color, defaultCaptionStyle.shadow_color),
+    shadow_size_percent: clampNumber(style.shadow_size_percent, 0, .8, defaultCaptionStyle.shadow_size_percent),
+    padding_percent: clampNumber(style.padding_percent, .2, 3, defaultCaptionStyle.padding_percent),
+    line_spacing_percent: clampNumber(style.line_spacing_percent, 0, 3, defaultCaptionStyle.line_spacing_percent),
+    position: ["top", "middle", "bottom"].includes(style.position) ? style.position : defaultCaptionStyle.position,
+    alignment: ["left", "center", "right"].includes(style.alignment) ? style.alignment : defaultCaptionStyle.alignment,
+    vertical_margin_percent: clampNumber(style.vertical_margin_percent, 2, 25, defaultCaptionStyle.vertical_margin_percent),
+  };
+}
+
+function captionStyleStorageKey(projectId) {
+  return `${captionStyleStoragePrefix}${projectId}`;
+}
+
+function loadCaptionStyle(project) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(captionStyleStorageKey(project.id)) || "null");
+    if (stored) return normalizeCaptionStyle(stored);
+  } catch (_) { /* Fall back to the project data. */ }
+  return normalizeCaptionStyle(project.caption_style);
+}
+
+function storeCaptionStyle(projectId, style) {
+  try { localStorage.setItem(captionStyleStorageKey(projectId), JSON.stringify(style)); }
+  catch (_) { /* Project saving still remains the primary persistence path. */ }
+}
+
+function bindCaptionStyleControls() {
+  $("#captionStylePreset").addEventListener("change", applyCaptionStylePreset);
+  document.querySelectorAll("[data-caption-style]").forEach((control) => {
+    const eventName = control.matches('input[type="range"], input[type="color"]') ? "input" : "change";
+    control.addEventListener(eventName, updateCaptionStyleFromControls);
+  });
+  $("#captionPreviewSample").addEventListener("change", (event) => {
+    state.captionSamplePreview = event.target.checked;
+    syncPlayback();
+  });
+  $("#resetCaptionStyle").addEventListener("click", () => {
+    if (!state.project) return;
+    state.project.caption_style = normalizeCaptionStyle(defaultCaptionStyle);
+    renderCaptionStyleControls();
+    applyCaptionStyle();
+    syncPlayback();
+    storeCaptionStyle(state.project.id, state.project.caption_style);
+    scheduleSave();
+  });
+}
+
+function applyCaptionStylePreset(event) {
+  if (!state.project || event.target.value === "custom") return;
+  state.project.caption_style = normalizeCaptionStyle(captionStylePresets[event.target.value]);
+  renderCaptionStyleControls();
+  applyCaptionStyle();
+  syncPlayback();
+  storeCaptionStyle(state.project.id, state.project.caption_style);
+  scheduleSave();
+}
+
+function updateCaptionStyleFromControls() {
+  if (!state.project) return;
+  state.project.caption_style = normalizeCaptionStyle({
+    preset: "custom",
+    font_family: $("#captionFontFamily").value,
+    bold: $("#captionBold").checked,
+    font_size_percent: $("#captionFontSize").value,
+    text_color: $("#captionTextColor").value,
+    background_color: $("#captionBackgroundColor").value,
+    background_opacity: $("#captionBackgroundOpacity").value,
+    outline_color: $("#captionOutlineColor").value,
+    outline_size_percent: $("#captionOutlineSize").value,
+    shadow_color: $("#captionShadowColor").value,
+    shadow_size_percent: $("#captionShadowSize").value,
+    padding_percent: $("#captionPadding").value,
+    line_spacing_percent: $("#captionLineSpacing").value,
+    position: $("#captionPosition").value,
+    alignment: $("#captionAlignment").value,
+    vertical_margin_percent: $("#captionVerticalMargin").value,
+  });
+  $("#captionStylePreset").value = "custom";
+  updateCaptionStyleValueLabels();
+  applyCaptionStyle();
+  syncPlayback();
+  storeCaptionStyle(state.project.id, state.project.caption_style);
+  scheduleSave();
+}
+
+function renderCaptionStyleControls() {
+  if (!state.project) return;
+  const style = normalizeCaptionStyle(state.project.caption_style);
+  state.project.caption_style = style;
+  $("#captionStylePreset").value = style.preset;
+  $("#captionFontFamily").value = style.font_family;
+  $("#captionBold").checked = style.bold;
+  $("#captionFontSize").value = style.font_size_percent;
+  $("#captionTextColor").value = style.text_color;
+  $("#captionBackgroundColor").value = style.background_color;
+  $("#captionBackgroundOpacity").value = style.background_opacity;
+  $("#captionOutlineColor").value = style.outline_color;
+  $("#captionOutlineSize").value = style.outline_size_percent;
+  $("#captionShadowColor").value = style.shadow_color;
+  $("#captionShadowSize").value = style.shadow_size_percent;
+  $("#captionPadding").value = style.padding_percent;
+  $("#captionLineSpacing").value = style.line_spacing_percent;
+  $("#captionPosition").value = style.position;
+  $("#captionAlignment").value = style.alignment;
+  $("#captionVerticalMargin").value = style.vertical_margin_percent;
+  updateCaptionStyleValueLabels();
+}
+
+function updateCaptionStyleValueLabels() {
+  $("#captionFontSizeValue").textContent = `${Number($("#captionFontSize").value).toFixed(1)}%`;
+  $("#captionBackgroundOpacityValue").textContent = `${Math.round(Number($("#captionBackgroundOpacity").value) * 100)}%`;
+  $("#captionOutlineSizeValue").textContent = `${Number($("#captionOutlineSize").value).toFixed(2)}%`;
+  $("#captionShadowSizeValue").textContent = `${Number($("#captionShadowSize").value).toFixed(2)}%`;
+  $("#captionPaddingValue").textContent = `${Number($("#captionPadding").value).toFixed(1)}%`;
+  $("#captionLineSpacingValue").textContent = `${Number($("#captionLineSpacing").value).toFixed(1)}%`;
+  $("#captionVerticalMarginValue").textContent = `${Math.round(Number($("#captionVerticalMargin").value))}%`;
+}
+
+function hexToRgba(hex, opacity) {
+  const value = normalizedHex(hex, "#000000").slice(1);
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+}
+
+function applyCaptionStyle() {
+  if (!state.project) return;
+  const overlay = $("#captionOverlay");
+  const style = normalizeCaptionStyle(state.project.caption_style);
+  const stage = $("#mediaStage");
+  const stageBox = stage.getBoundingClientRect();
+  const videoBox = mediaPlayer.hidden ? stageBox : mediaPlayer.getBoundingClientRect();
+  const videoHeight = Math.max(videoBox.height, 1);
+  const videoWidth = Math.max(videoBox.width, 1);
+  const videoTop = Math.max(0, videoBox.top - stageBox.top);
+  const videoLeft = Math.max(0, videoBox.left - stageBox.left);
+  const fontSize = Math.max(12, videoHeight * style.font_size_percent / 100);
+  const padding = Math.max(1, videoHeight * style.padding_percent / 100);
+  const outline = Math.max(0, videoHeight * style.outline_size_percent / 100);
+  const shadow = Math.max(0, videoHeight * style.shadow_size_percent / 100);
+  const lineSpacing = Math.max(0, videoHeight * style.line_spacing_percent / 100);
+
+  overlay.style.fontFamily = `"${style.font_family}", Arial, sans-serif`;
+  overlay.style.fontWeight = style.bold ? "700" : "400";
+  overlay.style.fontSize = `${fontSize}px`;
+  overlay.style.lineHeight = `${fontSize}px`;
+  overlay.style.color = style.text_color;
+  overlay.style.maxWidth = `${videoWidth * 0.88}px`;
+  overlay.style.textAlign = style.alignment;
+  overlay.style.alignItems = ({ left: "flex-start", center: "center", right: "flex-end" })[style.alignment];
+  overlay.style.setProperty("--caption-line-gap", `${lineSpacing}px`);
+  overlay.style.setProperty("--caption-line-padding", `${padding}px`);
+  overlay.style.setProperty("--caption-line-background", hexToRgba(style.background_color, style.background_opacity));
+  overlay.style.setProperty("--caption-line-outline", outline ? `${outline}px ${style.outline_color}` : "0 transparent");
+  overlay.style.setProperty("--caption-line-shadow", shadow ? `${shadow}px ${shadow}px 0 ${style.shadow_color}` : "none");
+
+  overlay.style.top = "auto";
+  overlay.style.bottom = "auto";
+  overlay.style.left = "auto";
+  overlay.style.right = "auto";
+  const transforms = [];
+  const horizontalMargin = videoWidth * 0.06;
+  const verticalMargin = videoHeight * style.vertical_margin_percent / 100;
+  if (style.alignment === "left") overlay.style.left = `${videoLeft + horizontalMargin}px`;
+  else if (style.alignment === "right") {
+    overlay.style.right = `${Math.max(0, stageBox.width - videoLeft - videoWidth + horizontalMargin)}px`;
+  } else {
+    overlay.style.left = `${videoLeft + videoWidth / 2}px`;
+    transforms.push("translateX(-50%)");
+  }
+  if (style.position === "top") overlay.style.top = `${videoTop + verticalMargin}px`;
+  else if (style.position === "middle") {
+    overlay.style.top = `${videoTop + videoHeight / 2}px`;
+    transforms.push("translateY(-50%)");
+  } else {
+    overlay.style.bottom = `${Math.max(0, stageBox.height - videoTop - videoHeight + verticalMargin)}px`;
+  }
+  overlay.style.transform = transforms.length ? transforms.join(" ") : "none";
+}
+
+const captionMeasureCanvas = document.createElement("canvas");
+
+function captionWrapMetrics() {
+  if (!state.project) return null;
+  const style = normalizeCaptionStyle(state.project.caption_style);
+  const stage = $("#mediaStage");
+  const stageBox = stage.getBoundingClientRect();
+  const videoBox = mediaPlayer.hidden ? stageBox : mediaPlayer.getBoundingClientRect();
+  const videoHeight = Math.max(videoBox.height, 1);
+  const videoWidth = Math.max(videoBox.width, 1);
+  const fontSize = Math.max(12, videoHeight * style.font_size_percent / 100);
+  const padding = Math.max(1, videoHeight * style.padding_percent / 100);
+  const outline = Math.max(0, videoHeight * style.outline_size_percent / 100);
+  const shadow = Math.max(0, videoHeight * style.shadow_size_percent / 100);
+  const maximumBoxWidth = Math.max(1, videoWidth * 0.88);
+  const maximumTextWidth = Math.max(1, maximumBoxWidth - (padding * 2) - (outline * 2) - shadow);
+  const context = captionMeasureCanvas.getContext("2d");
+  if (!context) return null;
+  context.font = `${style.bold ? "700" : "400"} ${fontSize}px "${style.font_family}", Arial, sans-serif`;
+  return { context, maximumTextWidth };
+}
+
+function splitCaptionWord(word, context, maximumTextWidth) {
+  const pieces = [];
+  let piece = "";
+  [...word].forEach((character) => {
+    const candidate = `${piece}${character}`;
+    if (piece && context.measureText(candidate).width > maximumTextWidth) {
+      pieces.push(piece);
+      piece = character;
+    } else piece = candidate;
+  });
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
+function wrapCaptionText(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const metrics = captionWrapMetrics();
+  if (!metrics) {
+    const fallback = text.match(/.{1,42}(?:\s+|$)|\S+/g) || [text];
+    return fallback.map((line) => line.trim()).filter(Boolean).join("\n");
+  }
+
+  const lines = [];
+  text.split(/\r?\n/).forEach((paragraph) => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return;
+    let line = "";
+    words.forEach((word) => {
+      const pieces = metrics.context.measureText(word).width > metrics.maximumTextWidth
+        ? splitCaptionWord(word, metrics.context, metrics.maximumTextWidth)
+        : [word];
+      pieces.forEach((piece) => {
+        const candidate = line ? `${line} ${piece}` : piece;
+        if (line && metrics.context.measureText(candidate).width > metrics.maximumTextWidth) {
+          lines.push(line);
+          line = piece;
+        } else line = candidate;
+      });
+    });
+    if (line) lines.push(line);
+  });
+  return lines.join("\n");
+}
+
+function refreshCaptionLayout() {
+  applyCaptionStyle();
+  syncPlayback();
+}
+
+function formatCaptionCue(cue) {
+  const speaker = cue.speaker ? `${displaySpeaker(cue.speaker)}: ` : "";
+  return wrapCaptionText(`${speaker}${cue.text}`);
+}
+
+function renderCaptionOverlay(lines) {
+  const overlay = $("#captionOverlay");
+  overlay.replaceChildren();
+  lines.filter(Boolean).forEach((line) => {
+    const element = document.createElement("span");
+    element.className = "caption-overlay-line";
+    element.textContent = line;
+    overlay.append(element);
+  });
 }
 
 function setupJobPanelStickiness() {
@@ -414,6 +767,9 @@ async function showHome() {
   workspaceView.hidden = true;
   homeView.hidden = false;
   state.project = null;
+  state.captionSamplePreview = false;
+  $("#captionPreviewSample").checked = false;
+  $("#captionOverlay").textContent = "";
   mediaPlayer.pause();
   audioPlayer.pause();
   await loadProjects();
@@ -435,10 +791,14 @@ function renderProject() {
     mediaPlayer.hidden = true;
     audioPlayer.hidden = true;
   }
+  project.caption_style = loadCaptionStyle(project);
+  renderCaptionStyleControls();
+  applyCaptionStyle();
   renderCues();
   renderFindings();
   renderSummary();
   renderExportResults();
+  syncPlayback();
   state.speakerEvidence = [];
   state.evidenceWindow = null;
   $("#renameSpeakersButton").disabled = !project.cues.some((cue) => cue.speaker);
@@ -561,6 +921,7 @@ function updateCue(index, field, value) {
   if (!state.project.cues[index]._editing) remember();
   state.project.cues[index]._editing = true;
   state.project.cues[index][field] = value;
+  syncPlayback();
   scheduleSave();
 }
 
@@ -730,11 +1091,19 @@ async function saveProject() {
   if (!state.project) return;
   state.project.cues.forEach((cue) => delete cue._editing);
   try {
-    state.project = await api(`/api/projects/${state.project.id}`, {
+    const captionStyle = normalizeCaptionStyle(state.project.caption_style);
+    storeCaptionStyle(state.project.id, captionStyle);
+    const savedProject = await api(`/api/projects/${state.project.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: $("#projectTitle").value, cues: state.project.cues, speaker_names: state.project.speaker_names || {} }),
+      body: JSON.stringify({
+        name: $("#projectTitle").value,
+        cues: state.project.cues,
+        speaker_names: state.project.speaker_names || {},
+        caption_style: captionStyle,
+      }),
     });
+    state.project = { ...savedProject, caption_style: captionStyle };
     $("#saveStatus").textContent = "Saved";
     renderFindings();
     renderSummary();
@@ -1098,9 +1467,11 @@ function syncPlayback() {
   const visible = primary?.overlap_group_id
     ? active.filter((cue) => cue.overlap_group_id === primary.overlap_group_id)
     : primary ? [primary] : [];
-  $("#captionOverlay").textContent = visible
-    .map((cue) => `${cue.speaker ? `${displaySpeaker(cue.speaker)}: ` : ""}${cue.text}`)
-    .join("\n");
+  const overlayLines = visible.flatMap((cue) => formatCaptionCue(cue).split("\n"));
+  if (!overlayLines.length && state.captionSamplePreview) {
+    overlayLines.push(...wrapCaptionText("Sample caption: customize this text before export.").split("\n"));
+  }
+  renderCaptionOverlay(overlayLines);
   updateActiveFace(time);
   document.querySelectorAll(".cue-row.active").forEach((row) => {
     row.classList.remove("active");
