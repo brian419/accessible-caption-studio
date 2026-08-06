@@ -5,7 +5,23 @@ captions for prerecorded video and audio. It combines automatic speech recogniti
 anonymous speaker labeling, meaningful sound descriptions, an accessible correction
 workflow, and production-ready exports in one portfolio application.
 
-![Accessible Caption Studio interface](docs/interface-preview.svg)
+## Screenshots
+
+### Caption editor
+
+![Accessible Caption Studio caption editor](docs/caption-editor.png)
+
+### Caption customization
+
+![Accessible Caption Studio caption customization controls](docs/caption-customization.png)
+
+### Media upload
+
+![Accessible Caption Studio media upload screen](docs/media-upload.png)
+
+### Recent projects
+
+![Accessible Caption Studio recent projects screen](docs/recent-projects.png)
 
 ## What it does
 
