@@ -397,6 +397,23 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
     dialog = page.locator("#captionLocalizationDialog")
     expect(dialog).to_be_visible()
     expect(dialog.get_by_role("heading", name="Languages & translations")).to_be_visible()
+    status_style = dialog.locator("#captionTrackStatus").evaluate(
+        """element => {
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            borderTopWidth: style.borderTopWidth,
+            borderRadius: style.borderRadius,
+            paddingLeft: style.paddingLeft,
+            paddingRight: style.paddingRight,
+          };
+        }"""
+    )
+    assert status_style["background"] == "rgba(0, 0, 0, 0)"
+    assert status_style["borderTopWidth"] == "0px"
+    assert status_style["borderRadius"] == "0px"
+    assert status_style["paddingLeft"] == "0px"
+    assert status_style["paddingRight"] == "0px"
     expect(dialog.get_by_label("Caption track", exact=True)).to_have_value("track-original")
     expect(dialog.get_by_label("Translated caption language")).to_be_visible()
     assert page.locator("#captionTrackBar").count() == 0
