@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-CURRENT_PROJECT_SCHEMA_VERSION = 2
+CURRENT_PROJECT_SCHEMA_VERSION = 3
 
 
 def migrate_project_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -38,6 +38,13 @@ def migrate_project_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], bo
                     cue.setdefault("vertical_margin_percent_override", None)
             data["schema_version"] = 2
             version = 2
+            changed = True
+            continue
+        if version == 2:
+            data.setdefault("transcription_language", "en")
+            data.setdefault("sdh_mode", "full")
+            data["schema_version"] = 3
+            version = 3
             changed = True
             continue
         raise ValueError(f"No migration path exists for project schema version {version}")

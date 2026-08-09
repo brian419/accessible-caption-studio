@@ -19,6 +19,7 @@ def transcribe(
     output_path: Path,
     intervals_path: Path | None = None,
     model_name: str = "distil-large-v3",
+    language: str | None = None,
 ) -> None:
     # CTranslate2 imports PyTorch only for optional model conversion helpers. Blocking that
     # import avoids loading PyTorch's second OpenMP runtime in the Whisper worker.
@@ -44,6 +45,7 @@ def transcribe(
         segments, _ = model.transcribe(
             str(audio_path),
             word_timestamps=True,
+            language=language,
             vad_filter=False,
             beam_size=5,
             no_speech_threshold=0.8,
@@ -103,9 +105,10 @@ def main() -> None:
     parser.add_argument("--intervals", type=Path)
     parser.add_argument(
         "--model",
-        choices=("small.en", "distil-large-v3"),
+        choices=("small.en", "distil-large-v3", "small", "large-v3"),
         default="distil-large-v3",
     )
+    parser.add_argument("--language")
     parser.add_argument("--vad-only", action="store_true")
     arguments = parser.parse_args()
     if arguments.vad_only:
@@ -117,6 +120,7 @@ def main() -> None:
             arguments.output_path,
             arguments.intervals,
             arguments.model,
+            arguments.language,
         )
 
 
