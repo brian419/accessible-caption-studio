@@ -1,0 +1,36 @@
+name: Apply final roadmap batch
+
+on:
+  push:
+    branches:
+      - major-iterations-batch-2
+    paths:
+      - scripts/apply_final_roadmap_batch.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations-batch-2
+          fetch-depth: 0
+
+      - name: Apply final roadmap batch
+        run: python scripts/apply_final_roadmap_batch.py
+
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git commit -m "Finish remaining roadmap tickets"
+          git push origin HEAD:major-iterations-batch-2
