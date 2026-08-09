@@ -39,7 +39,9 @@ jobs:
         run: ruff check . --ignore E501
 
       - name: JavaScript syntax
-        run: node --check src/accessible_caption_studio/web/app.js
+        run: |
+          node --check src/accessible_caption_studio/web/app.js
+          node --check src/accessible_caption_studio/web/final_batch.js
 
       - name: Pytest
         run: pytest -q --ignore=tests/browser
