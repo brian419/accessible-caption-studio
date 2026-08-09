@@ -33,3 +33,5 @@ jobs:
           fi
           git commit -m "Restructure caption editor interface"
           git push origin HEAD:major-iterations
+
+# One-time branch-local migration. Retire after the generated UI commit lands.
