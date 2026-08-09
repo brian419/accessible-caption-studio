@@ -23,12 +23,12 @@ export UV_PYTHON_INSTALL_DIR="$PWD/.runtime/python"
 export UV_CACHE_DIR="$PWD/.runtime/cache"
 export MPLCONFIGDIR="$PWD/storage/temporary/matplotlib"
 
-if [ ! -f .setup-complete-v5 ] || [ ! -x .studio-venv/bin/python ]; then
+if [ ! -f .setup-complete-v6 ] || [ ! -x .studio-venv/bin/python ]; then
   echo "Preparing Accessible Caption Studio. The first setup can take several minutes."
   .bootstrap/bin/uv python install 3.11 --install-dir "$UV_PYTHON_INSTALL_DIR" --no-bin
   .bootstrap/bin/uv venv --python 3.11 --clear .studio-venv
   .bootstrap/bin/uv pip install --python .studio-venv/bin/python -e ".[ml]"
-  touch .setup-complete-v5
+  touch .setup-complete-v6
 fi
 
 exec .studio-venv/bin/accessible-caption-studio start
