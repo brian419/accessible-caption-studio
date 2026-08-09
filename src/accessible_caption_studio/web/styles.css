@@ -1766,3 +1766,26 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
 .caption-font-option .caption-font-favorite {
   transform: translateY(-1px);
 }
+
+
+/* Active project job card spacing fix */
+.project-grid:not(.project-grid-compact) .project-card.has-active-job {
+  height: 292px !important;
+  min-height: 292px !important;
+}
+
+.project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status {
+  margin: .1rem .9rem .85rem !important;
+  padding-bottom: 0 !important;
+}
+
+.project-grid:not(.project-grid-compact) .project-card.has-active-job .project-card-actions {
+  margin-top: auto !important;
+}
+
+@media (max-width: 560px) {
+  .project-grid:not(.project-grid-compact) .project-card.has-active-job {
+    height: 284px !important;
+    min-height: 284px !important;
+  }
+}

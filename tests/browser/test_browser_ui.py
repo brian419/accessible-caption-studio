@@ -488,3 +488,39 @@ def test_dynamic_project_job_status_has_space_below_note(page: Page, studio_url:
     status = page.locator('#dynamic-job-status-spacing-fixture')
     expect(status).to_be_visible()
     assert status.evaluate("element => parseFloat(getComputedStyle(element).paddingBottom)") >= 4
+
+
+
+def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
+    _open(page, studio_url)
+    page.get_by_label("Project view").select_option("default")
+    _inject_project_card(page, "active-job-spacing-regression")
+
+    card = page.locator("#active-job-spacing-regression")
+    card.evaluate(
+        """card => {
+          card.classList.add('has-active-job');
+          const status = document.createElement('span');
+          status.className = 'project-job-status';
+          status.innerHTML = `
+            <span class="project-job-spinner" aria-hidden="true"></span>
+            <span class="project-job-status-text">Transcribing speech and singing · 25%</span>`;
+          card.querySelector('.project-open').append(status);
+        }"""
+    )
+
+    geometry = card.evaluate(
+        """card => {
+          const box = card.getBoundingClientRect();
+          const status = card.querySelector('.project-job-status').getBoundingClientRect();
+          const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
+          return {
+            cardHeight: Math.round(box.height),
+            statusBottom: status.bottom,
+            actionsTop: actions.top,
+          };
+        }"""
+    )
+    assert geometry["cardHeight"] == 292
+    assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
