@@ -9,7 +9,6 @@ from pathlib import Path
 
 from .models import utc_now
 
-
 MODEL_SPECS = (
     ("whisper-en-fast", "Whisper English - Fast", "Small English transcription model"),
     ("whisper-en-accurate", "Whisper English - Accurate", "Distil-Whisper Large v3 transcription model"),
