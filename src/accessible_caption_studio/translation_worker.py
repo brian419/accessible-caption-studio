@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 MODEL_NAME = "facebook/m2m100_418M"
+MODEL_REVISION = "1fa802356610a66e78d152c9f4a16206f88315e5"
 
 
 def translate(
@@ -21,10 +22,16 @@ def translate(
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
     cache_dir = model_dir / "huggingface"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    tokenizer = M2M100Tokenizer.from_pretrained(MODEL_NAME, cache_dir=str(cache_dir))
+    tokenizer = M2M100Tokenizer.from_pretrained(
+        MODEL_NAME,
+        revision=MODEL_REVISION,
+        cache_dir=str(cache_dir),
+    )
     model = M2M100ForConditionalGeneration.from_pretrained(
         MODEL_NAME,
+        revision=MODEL_REVISION,
         cache_dir=str(cache_dir),
+        use_safetensors=True,
     )
     model.to("cpu")
     model.eval()
