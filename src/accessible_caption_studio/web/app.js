@@ -2562,7 +2562,7 @@ function toast(message, type = "info") {
     const commandBar = document.createElement("div");
     commandBar.id = "captionCommandBar";
     commandBar.className = "editor-command-bar";
-    commandBar.setAttribute("role", "toolbar");
+    commandBar.setAttribute("role", "group");
     commandBar.setAttribute("aria-label", "Caption editor tools");
 
     const primary = document.createElement("div");
