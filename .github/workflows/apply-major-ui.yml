@@ -1,14 +1,35 @@
-name: Retired major UI patch
+name: Apply export geometry patch
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [major-iterations]
+    paths:
+      - scripts/apply_export_geometry.py
+      - .github/workflows/apply-major-ui.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  retired:
+  apply:
     runs-on: ubuntu-latest
     steps:
-      - name: Retired
-        run: echo "The one-time major UI patch has already been applied."
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations
+
+      - name: Apply patch
+        run: python scripts/apply_export_geometry.py
+
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/exports.py
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git commit -m "Normalize mobile video geometry during export"
+          git push origin HEAD:major-iterations
