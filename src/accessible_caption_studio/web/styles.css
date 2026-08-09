@@ -623,3 +623,18 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
 @media (prefers-reduced-motion: reduce) {
   .notification { transition: none; transform: none; }
 }
+
+/* Keep long Recent Projects titles inside their cards without hiding any of the name. */
+.project-card,
+.project-open {
+  min-width: 0;
+}
+.project-open {
+  max-width: 100%;
+}
+.project-card .project-open > strong {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
