@@ -5,6 +5,7 @@ import mimetypes
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from functools import lru_cache
 from importlib.resources import files
@@ -175,6 +176,11 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         return {
             "ok": True,
             "ffmpeg": shutil.which("ffmpeg") is not None,
+            "ffprobe": shutil.which("ffprobe") is not None,
+            "python_version": sys.version.split()[0],
+            "free_disk_bytes": shutil.disk_usage(root).free,
+            "model_cache_bytes": store.summary().models_bytes,
+            "recovered_jobs": len(jobs.recovered_job_ids),
             "speaker_engine": "local-ecapa",
             "speaker_token_required": False,
             "visual_speaker_engine": "sface-ecapa-v1",
