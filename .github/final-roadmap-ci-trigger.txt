@@ -1,1 +1,1 @@
-Trigger normal CI for the generated final roadmap batch.
+Trigger normal CI after final roadmap lint fixes.
