@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 MODEL_NAME = "facebook/m2m100_418M"
-MODEL_REVISION = "1fa802356610a66e78d152c9f4a16206f88315e5"
+MODEL_REVISION = "ae6407352f7f86e328c0f0678d466fc4246e78b3"
 
 
 def translate(
