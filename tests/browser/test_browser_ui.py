@@ -364,91 +364,46 @@ def test_localization_controls_distinguish_spoken_and_caption_languages(page: Pa
 
 
 
-def test_caption_localization_toolbar_sits_below_editor_tools_and_reflows(page: Page, studio_url: str) -> None:
+def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page, studio_url: str) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     _open(page, studio_url)
 
     source = page.evaluate("() => fetch('/final-batch.js').then((response) => response.text())")
-    assert 'heading.after(bar);' in source
+    assert 'heading.after(bar);' not in source
+    assert 'installCaptionLocalizationDialog' in source
+    assert 'installCaptionLocalizationAction' in source
 
     page.locator("#homeView").evaluate("element => { element.hidden = true; }")
     page.locator("#workspaceView").evaluate("element => { element.hidden = false; }")
-    page.locator(".editor-panel").evaluate(
-        """panel => {
-          const heading = panel.querySelector('.editor-heading');
-          const bar = document.createElement('div');
-          bar.id = 'captionTrackBarFixture';
-          bar.className = 'caption-track-bar';
-          bar.innerHTML = `
-            <div class="caption-track-heading">
-              <div>
-                <span class="caption-track-eyebrow">Caption localization</span>
-                <span class="caption-track-description">Switch languages and manage translated caption tracks.</span>
-              </div>
-            </div>
-            <div class="caption-track-controls">
-              <div class="caption-track-current">
-                <label class="caption-track-field">Caption track
-                  <select><option>Korean · Translation · needs update</option></select>
-                </label>
-                <span class="caption-track-status needs-update">Source changed · review again</span>
-              </div>
-              <div class="caption-track-create">
-                <span class="caption-track-control-label">Add translation</span>
-                <div class="caption-track-add">
-                  <select><option>Choose language…</option></select>
-                  <button class="secondary editor-action" type="button">Create translation</button>
-                </div>
-              </div>
-            </div>
-            <div class="caption-track-actions">
-              <span class="caption-track-actions-label">Translation actions</span>
-              <button class="secondary editor-action" type="button">Mark reviewed</button>
-              <button class="secondary editor-action" type="button">Regenerate</button>
-              <button class="secondary editor-action" type="button">Delete translation</button>
-            </div>`;
-          heading.after(bar);
+    before = page.locator(".column-labels").evaluate("element => Math.round(element.getBoundingClientRect().top)")
+    assert page.locator("#captionTrackBar").count() == 0
+
+    page.evaluate(
+        """() => {
+          state.project = {
+            id: 'modal-layout-fixture',
+            name: 'Localization layout fixture',
+            active_caption_track_id: 'track-original',
+            caption_tracks: [
+              { id: 'track-original', kind: 'original', language: 'en', review_state: 'reviewed', cues: [{ id: 'cue-1', start: 0, end: 1, text: 'Hello' }] },
+              { id: 'track-ko', kind: 'translation', language: 'ko', review_state: 'needs_update', cues: [{ id: 'cue-1-ko', start: 0, end: 1, text: '안녕하세요' }] },
+            ],
+            cues: [{ id: 'cue-1', start: 0, end: 1, text: 'Hello' }],
+          };
+          document.querySelector('#captionLocalizationButton').click();
         }"""
     )
 
-    bar = page.locator("#captionTrackBarFixture")
-    expect(bar).to_be_visible()
-    desktop = bar.evaluate(
-        """bar => {
-          const heading = document.querySelector('.editor-heading').getBoundingClientRect();
-          const box = bar.getBoundingClientRect();
-          const current = bar.querySelector('.caption-track-current').getBoundingClientRect();
-          const create = bar.querySelector('.caption-track-create').getBoundingClientRect();
-          return {
-            top: Math.round(box.top),
-            headingBottom: Math.round(heading.bottom),
-            overflow: Math.round(bar.scrollWidth - bar.clientWidth),
-            currentBottom: Math.round(current.bottom),
-            createTop: Math.round(create.top),
-          };
-        }"""
-    )
-    assert desktop["top"] >= desktop["headingBottom"] - 1
-    assert desktop["overflow"] <= 1
-    assert desktop["createTop"] >= desktop["currentBottom"] + 8
+    dialog = page.locator("#captionLocalizationDialog")
+    expect(dialog).to_be_visible()
+    expect(dialog.get_by_role("heading", name="Languages & translations")).to_be_visible()
+    expect(dialog.get_by_label("Caption track")).to_have_value("track-original")
+    expect(dialog.get_by_label("Translated caption language")).to_be_visible()
+    assert page.locator("#captionTrackBar").count() == 0
+    after = page.locator(".column-labels").evaluate("element => Math.round(element.getBoundingClientRect().top)")
+    assert abs(after - before) <= 1
 
     page.set_viewport_size({"width": 390, "height": 844})
-    mobile = bar.evaluate(
-        """bar => {
-          const current = bar.querySelector('.caption-track-current').getBoundingClientRect();
-          const create = bar.querySelector('.caption-track-create').getBoundingClientRect();
-          return {
-            overflow: Math.round(bar.scrollWidth - bar.clientWidth),
-            currentBottom: Math.round(current.bottom),
-            createTop: Math.round(create.top),
-          };
-        }"""
-    )
-    assert mobile["overflow"] <= 1
-    assert mobile["createTop"] >= mobile["currentBottom"]
-    assert bar.locator(".caption-track-controls").evaluate(
-        "element => element.scrollWidth <= element.clientWidth + 1"
-    )
-    assert bar.locator(".caption-track-actions").evaluate(
-        "element => element.scrollWidth <= element.clientWidth + 1"
-    )
+    assert dialog.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
+    assert dialog.locator("#captionLocalizationBody").evaluate("element => element.scrollWidth <= element.clientWidth + 1")
+
