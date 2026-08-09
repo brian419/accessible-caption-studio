@@ -1,0 +1,50 @@
+name: Fix caption localization overflow test
+
+on:
+  push:
+    branches:
+      - work-2026-08-09
+    paths:
+      - .github/caption-localization-overflow-test-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: work-2026-08-09
+          fetch-depth: 0
+
+      - name: Scope localization overflow regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/browser/test_browser_ui.py')
+          text = path.read_text(encoding='utf-8')
+          old = '    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")\n'
+          new = '''    assert bar.locator(".caption-track-controls").evaluate(\n        "element => element.scrollWidth <= element.clientWidth + 1"\n    )\n    assert bar.locator(".caption-track-actions").evaluate(\n        "element => element.scrollWidth <= element.clientWidth + 1"\n    )\n'''
+          # Replace only the final occurrence, because whole-page overflow checks elsewhere are intentional.
+          position = text.rfind(old)
+          if position < 0:
+              raise SystemExit('Expected final whole-page overflow assertion was not found')
+          text = text[:position] + new + text[position + len(old):]
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Remove one-time files
+        run: |
+          rm -f .github/workflows/fix-caption-localization-overflow-test.yml
+          rm -f .github/caption-localization-overflow-test-trigger.txt
+
+      - name: Commit scoped browser regression
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Scope caption localization overflow regression"
+          git push origin HEAD:work-2026-08-09
