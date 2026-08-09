@@ -27,6 +27,8 @@ class LocalAnalyzer(BaseLocalAnalyzer):
         super().__init__(model_dir, transcription_quality)
         language = str(transcription_language or "en").strip()
         self.transcription_language = language if language else "en"
+        self.detected_language: str | None = None
+        self.detected_language_probability: float | None = None
         self.sdh_mode = sdh_mode if sdh_mode in {"off", "conservative", "full"} else "full"
 
     def _language_code(self) -> str | None:
@@ -71,8 +73,11 @@ class LocalAnalyzer(BaseLocalAnalyzer):
         output_path: Path,
         intervals_path: Path | None = None,
         progress: ProgressCallback | None = None,
+        metadata_output_path: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         command = self._whisper_command(audio_path, output_path, intervals_path)
+        if metadata_output_path:
+            command.extend(["--metadata-output", str(metadata_output_path)])
         reporter = progress or getattr(self, "_progress", None)
         runner = getattr(reporter, "run_process", None)
         return (
@@ -83,10 +88,17 @@ class LocalAnalyzer(BaseLocalAnalyzer):
 
     def transcribe(self, audio_path: Path) -> list[WordToken]:
         if self._uses_english_model():
+            self.detected_language = "en"
+            self.detected_language_probability = 1.0
             return super().transcribe(audio_path)
         with tempfile.TemporaryDirectory(dir=self.model_dir) as temporary_dir:
             output_path = Path(temporary_dir) / "words.json"
-            process = self._run_whisper(audio_path, output_path)
+            metadata_path = Path(temporary_dir) / "language.json"
+            process = self._run_whisper(
+                audio_path,
+                output_path,
+                metadata_output_path=metadata_path,
+            )
             if process.returncode:
                 details = (process.stderr or process.stdout or "").strip()
                 if "No module named 'faster_whisper'" in details:
@@ -99,10 +111,19 @@ class LocalAnalyzer(BaseLocalAnalyzer):
                     f"Whisper transcription failed: {details[-1000:]}",
                 )
             try:
-                return [
+                words = [
                     WordToken.model_validate(item)
                     for item in json.loads(output_path.read_text(encoding="utf-8"))
                 ]
+                if metadata_path.is_file():
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    detected = str(metadata.get("language") or "").strip().lower()
+                    if detected:
+                        self.detected_language = detected
+                    probability = metadata.get("language_probability")
+                    if probability is not None:
+                        self.detected_language_probability = float(probability)
+                return words
             except (OSError, ValueError) as exc:
                 raise StudioError(
                     "transcription_failed", "Whisper returned an unreadable result."

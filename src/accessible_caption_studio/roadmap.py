@@ -50,6 +50,7 @@ def register_roadmap_routes(
         if changed:
             store.create_revision(project, "Before changing transcription options")
             project.transcription_language = request.transcription_language
+            project.spoken_language = request.transcription_language
             project.sdh_mode = request.sdh_mode
         return store.save(project) if changed else project
 
@@ -129,6 +130,10 @@ def register_roadmap_routes(
                 current.transcription_language = str(
                     parameters.get("transcription_language") or current.transcription_language
                 )
+                current.spoken_language = current.transcription_language
+                requested = parameters.get("target_caption_languages") or []
+                if isinstance(requested, list):
+                    current.requested_caption_languages = [str(item) for item in requested]
                 mode = str(parameters.get("sdh_mode") or current.sdh_mode)
                 current.sdh_mode = mode if mode in {"off", "conservative", "full"} else "full"
                 store.save(current)

@@ -201,6 +201,25 @@ class ExportArtifact(BaseModel):
     size_bytes: int = Field(default=0, ge=0)
 
 
+class CaptionTrack(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    language: str = Field(default="en", pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$")
+    kind: Literal["original", "translation"] = "original"
+    source_track_id: str | None = None
+    source_language: str | None = Field(
+        default=None, pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$"
+    )
+    review_state: Literal["unreviewed", "in_review", "reviewed", "needs_update"] = (
+        "unreviewed"
+    )
+    cues: list[CaptionCue] = Field(default_factory=list)
+    findings: list[ValidationFinding] = Field(default_factory=list)
+    exports: list[ExportArtifact] = Field(default_factory=list)
+    translation_model: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class AnalysisJob(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     project_id: str
@@ -243,9 +262,131 @@ class Project(BaseModel):
     transcription_language: str = Field(
         default="en", pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
     )
+    spoken_language: str = Field(
+        default="en", pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
+    )
+    detected_language: str | None = Field(
+        default=None, pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$"
+    )
+    requested_caption_languages: list[str] = Field(default_factory=list)
+    caption_tracks: list[CaptionTrack] = Field(default_factory=list)
+    active_caption_track_id: str | None = None
     sdh_mode: Literal["off", "conservative", "full"] = "full"
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     is_favorite: bool = False
+
+    @field_validator("requested_caption_languages")
+    @classmethod
+    def valid_requested_caption_languages(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value:
+            code = str(item).strip()
+            if code in {"auto", "und"}:
+                continue
+            if not re.fullmatch(r"[a-z]{2,3}(?:-[A-Z]{2})?", code):
+                raise ValueError("caption language is invalid")
+            if code not in cleaned:
+                cleaned.append(code)
+        return cleaned
+
+    @model_validator(mode="after")
+    def synchronize_caption_track_state(self) -> Project:
+        # transcription_language is retained as a compatibility alias for older clients.
+        if self.spoken_language == "en" and self.transcription_language != "en":
+            self.spoken_language = self.transcription_language
+        self.transcription_language = self.spoken_language
+
+        if not self.caption_tracks:
+            original_language = self.detected_language or (
+                self.spoken_language if self.spoken_language != "auto" else "und"
+            )
+            self.caption_tracks = [
+                CaptionTrack(
+                    language=original_language,
+                    kind="original",
+                    cues=[cue.model_copy(deep=True) for cue in self.cues],
+                    findings=[finding.model_copy(deep=True) for finding in self.findings],
+                    exports=[artifact.model_copy(deep=True) for artifact in self.exports],
+                )
+            ]
+
+        ids = {track.id for track in self.caption_tracks}
+        if self.active_caption_track_id not in ids:
+            original = next(
+                (track for track in self.caption_tracks if track.kind == "original"),
+                self.caption_tracks[0],
+            )
+            self.active_caption_track_id = original.id
+        self.refresh_caption_track_view()
+        return self
+
+    def caption_track(self, track_id: str | None = None) -> CaptionTrack | None:
+        wanted = track_id or self.active_caption_track_id
+        return next((track for track in self.caption_tracks if track.id == wanted), None)
+
+    def active_caption_track(self) -> CaptionTrack:
+        track = self.caption_track()
+        if track is None:
+            raise ValueError("Project has no active caption track")
+        return track
+
+    def original_caption_track(self) -> CaptionTrack:
+        track = next(
+            (item for item in self.caption_tracks if item.kind == "original"),
+            None,
+        )
+        if track is None:
+            raise ValueError("Project has no original caption track")
+        return track
+
+    def translation_caption_track(self, language: str) -> CaptionTrack | None:
+        return next(
+            (
+                item
+                for item in self.caption_tracks
+                if item.kind == "translation" and item.language == language
+            ),
+            None,
+        )
+
+    def refresh_caption_track_view(self) -> None:
+        track = self.caption_track()
+        if track is None:
+            self.cues = []
+            self.findings = []
+            self.exports = []
+            return
+        self.cues = [cue.model_copy(deep=True) for cue in track.cues]
+        self.findings = [finding.model_copy(deep=True) for finding in track.findings]
+        self.exports = [artifact.model_copy(deep=True) for artifact in track.exports]
+
+    def sync_active_caption_track(self) -> None:
+        track = self.caption_track()
+        if track is None:
+            return
+        cues = [cue.model_copy(deep=True) for cue in self.cues]
+        findings = [finding.model_copy(deep=True) for finding in self.findings]
+        exports = [artifact.model_copy(deep=True) for artifact in self.exports]
+        if track.cues != cues or track.findings != findings or track.exports != exports:
+            track.cues = cues
+            track.findings = findings
+            track.exports = exports
+            track.updated_at = utc_now()
+
+    def activate_caption_track(self, track_id: str) -> CaptionTrack:
+        track = self.caption_track(track_id)
+        if track is None:
+            raise KeyError(track_id)
+        self.sync_active_caption_track()
+        self.active_caption_track_id = track.id
+        self.refresh_caption_track_view()
+        return track
+
+    def mark_translation_tracks_stale(self) -> None:
+        for track in self.caption_tracks:
+            if track.kind == "translation" and track.cues:
+                track.review_state = "needs_update"
+                track.updated_at = utc_now()
 
     @field_validator("speaker_names")
     @classmethod

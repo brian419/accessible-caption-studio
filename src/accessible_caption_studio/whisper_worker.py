@@ -20,6 +20,7 @@ def transcribe(
     intervals_path: Path | None = None,
     model_name: str = "distil-large-v3",
     language: str | None = None,
+    metadata_output_path: Path | None = None,
 ) -> None:
     # CTranslate2 imports PyTorch only for optional model conversion helpers. Blocking that
     # import avoids loading PyTorch's second OpenMP runtime in the Whisper worker.
@@ -37,12 +38,14 @@ def transcribe(
         intervals = json.loads(intervals_path.read_text(encoding="utf-8"))
     passes = intervals or [None]
     words: list[dict[str, object]] = []
+    detected_language: str | None = None
+    detected_probability: float | None = None
     for interval in passes:
         if isinstance(interval, dict):
             clip = [float(interval["start"]), float(interval["end"])]
         else:
             clip = interval
-        segments, _ = model.transcribe(
+        segments, info = model.transcribe(
             str(audio_path),
             word_timestamps=True,
             language=language,
@@ -54,6 +57,10 @@ def transcribe(
             temperature=0.0,
             clip_timestamps=clip or "0",
         )
+        if detected_language is None:
+            detected_language = getattr(info, "language", None)
+            probability = getattr(info, "language_probability", None)
+            detected_probability = float(probability) if probability is not None else None
         for segment in segments:
             for word in segment.words or []:
                 text = word.word.strip()
@@ -70,6 +77,18 @@ def transcribe(
     temporary = output_path.with_suffix(".partial.json")
     temporary.write_text(json.dumps(words), encoding="utf-8")
     temporary.replace(output_path)
+    if metadata_output_path:
+        metadata_temporary = metadata_output_path.with_suffix(".partial.json")
+        metadata_temporary.write_text(
+            json.dumps(
+                {
+                    "language": detected_language,
+                    "language_probability": detected_probability,
+                }
+            ),
+            encoding="utf-8",
+        )
+        metadata_temporary.replace(metadata_output_path)
 
 
 def detect_speech(audio_path: Path, output_path: Path) -> None:
@@ -109,6 +128,7 @@ def main() -> None:
         default="distil-large-v3",
     )
     parser.add_argument("--language")
+    parser.add_argument("--metadata-output", type=Path)
     parser.add_argument("--vad-only", action="store_true")
     arguments = parser.parse_args()
     if arguments.vad_only:
@@ -121,6 +141,7 @@ def main() -> None:
             arguments.intervals,
             arguments.model,
             arguments.language,
+            arguments.metadata_output,
         )
 
 

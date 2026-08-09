@@ -30,6 +30,7 @@ ml = [
   "torchaudio==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "torchaudio>=2.8,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "transformers>=4.48,<5",
+  "sentencepiece>=0.2,<1",
 ]
 dev = [
   "httpx>=0.28,<1",

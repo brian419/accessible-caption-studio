@@ -348,3 +348,13 @@ def test_project_view_mode_persists_between_visits(page: Page, studio_url: str) 
 
     page.get_by_label("Project view").select_option("default")
     expect(page.locator("#projectList")).not_to_have_class(re.compile(r"\bproject-grid-compact\b"))
+
+def test_localization_controls_distinguish_spoken_and_caption_languages(page: Page, studio_url: str) -> None:
+    _open(page, studio_url)
+    expect(page.get_by_label("Spoken language")).to_be_visible()
+    expect(page.get_by_label("Add translated caption track")).to_be_visible()
+    page.get_by_label("Spoken language").select_option("es")
+    page.get_by_label("Add translated caption track").select_option("fr")
+    expect(page.locator("#defaultCaptionLanguageChips")).to_contain_text("French")
+    expect(page.locator("#captioningOptionsSummary")).to_contain_text("Spanish")
+    expect(page.locator("#captioningOptionsSummary")).to_contain_text("+1 translation")

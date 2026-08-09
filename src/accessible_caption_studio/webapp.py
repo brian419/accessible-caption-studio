@@ -23,6 +23,8 @@ from .enhanced_analyzer import LocalAnalyzer
 from .errors import StudioError
 from .exports import export_captioned_mp4, export_text
 from .jobs import JobManager
+from .localization import create_translation_track, normalize_target_languages
+from .localization_routes import register_localization_routes, start_translation_job
 from .media import download_youtube, extract_audio, inspect_media
 from .models import (
     CaptionCue,
@@ -53,6 +55,7 @@ class YouTubeRequest(BaseModel):
         default="en", pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
     )
     sdh_mode: Literal["off", "conservative", "full"] = "full"
+    target_caption_languages: list[str] = Field(default_factory=list)
 
 
 class ProjectUpdate(BaseModel):
@@ -243,11 +246,15 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             str, Form(pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$")
         ] = "en",
         sdh_mode: Annotated[Literal["off", "conservative", "full"], Form()] = "full",
+        target_caption_languages: Annotated[str, Form()] = "[]",
     ) -> dict[str, Any]:
         filename = safe_filename(media.filename or "media")
+        targets = _parse_target_caption_languages(target_caption_languages)
         project = store.create(Path(filename).stem)
         project.transcription_quality = transcription_quality
         project.transcription_language = transcription_language
+        project.spoken_language = transcription_language
+        project.requested_caption_languages = targets
         project.sdh_mode = sdh_mode
         project_dir = store.project_dir(project.id)
         destination = project_dir / filename
@@ -261,9 +268,18 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 await _save_upload(captions, caption_path)
                 project.cues = parse_caption_file(caption_path)
                 project.findings = validate_cues(project.cues, project.media.duration)
+                original = project.original_caption_track()
+                original.language = (
+                    transcription_language if transcription_language != "auto" else "und"
+                )
                 caption_path.unlink(missing_ok=True)
                 store.save(project)
-                return {"project": project, "job": None}
+                job = (
+                    start_translation_job(project.id, store, jobs, targets)
+                    if targets
+                    else None
+                )
+                return {"project": store.get(project.id), "job": job}
             store.save(project)
             job = _start_analysis(project.id, store, jobs)
             return {"project": store.get(project.id), "job": job}
@@ -276,6 +292,10 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         project = store.create("YouTube video")
         project.transcription_quality = request.transcription_quality
         project.transcription_language = request.transcription_language
+        project.spoken_language = request.transcription_language
+        project.requested_caption_languages = normalize_target_languages(
+            request.target_caption_languages
+        )
         project.sdh_mode = request.sdh_mode
         store.save(project)
 
@@ -307,6 +327,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 "cookie_browser": request.cookie_browser,
                 "transcription_quality": request.transcription_quality,
                 "transcription_language": request.transcription_language,
+                "target_caption_languages": project.requested_caption_languages,
                 "sdh_mode": request.sdh_mode,
             },
         )
@@ -411,6 +432,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             project.transcription_quality = request.transcription_quality
         if request.transcription_language is not None:
             project.transcription_language = request.transcription_language
+            project.spoken_language = request.transcription_language
         if request.sdh_mode is not None:
             project.sdh_mode = request.sdh_mode
         if request.caption_style is not None:
@@ -440,6 +462,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/analyze-overlap", status_code=202)
     def analyze_overlap(project_id: str, request: OverlapRequest) -> Any:
         project = _get_project(store, project_id)
+        _require_original_caption_track(project)
         if not project.media:
             raise HTTPException(status_code=400, detail="Media is not ready for analysis")
         if request.end <= request.start:
@@ -530,6 +553,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/reanalyze-speakers", status_code=202)
     def reanalyze_speakers(project_id: str, request: SpeakerReanalysisRequest) -> Any:
         project = _get_project(store, project_id)
+        _require_original_caption_track(project)
         if not project.media or not project.words:
             raise HTTPException(
                 status_code=400,
@@ -701,6 +725,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/repair-transcript", status_code=202)
     def repair_transcript(project_id: str) -> Any:
         project = _get_project(store, project_id)
+        _require_original_caption_track(project)
         if not project.media or not project.words:
             raise HTTPException(
                 status_code=400,
@@ -953,7 +978,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     def download_export(project_id: str, filename: str) -> FileResponse:
         project = _get_project(store, project_id)
         safe = safe_filename(filename)
-        if not any(item.filename == safe for item in project.exports):
+        all_exports = [
+            item
+            for track in project.caption_tracks
+            for item in track.exports
+        ]
+        if not any(item.filename == safe for item in [*project.exports, *all_exports]):
             raise HTTPException(status_code=404, detail="Export not found")
         path = store.project_dir(project_id) / "exports" / safe
         return FileResponse(
@@ -977,6 +1007,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return Response(status_code=204)
+
+    register_localization_routes(app, store, jobs)
 
     register_roadmap_routes(
         app,
@@ -1022,6 +1054,9 @@ def _analysis_task(
     progress: Callable[[str, int, str], None],
 ) -> None:
     project = store.get(project_id)
+    original_track = project.original_caption_track()
+    if project.active_caption_track_id != original_track.id:
+        project.activate_caption_track(original_track.id)
     if not project.media:
         raise StudioError("media_not_ready", "Media is not ready for analysis.")
     project_dir = store.project_dir(project_id)
@@ -1033,7 +1068,7 @@ def _analysis_task(
     analyzer = LocalAnalyzer(
         store.models_dir,
         project.transcription_quality,
-        project.transcription_language,
+        project.spoken_language,
         project.sdh_mode,
     )
     words, speakers, sounds, cues = analyzer.analyze(
@@ -1091,8 +1126,15 @@ def _analysis_task(
     project.speaker_engine = "sface_ecapa_v1"
     project.fusion_summary = fusion_summary
     project.sounds = sounds
+    project.detected_language = getattr(analyzer, "detected_language", None)
+    original_track = project.original_caption_track()
+    original_track.language = (
+        project.detected_language
+        or (project.spoken_language if project.spoken_language != "auto" else "und")
+    )
     project.cues = cues
     project.findings = validate_cues(cues, project.media.duration)
+    project.mark_translation_tracks_stale()
     uncertain_cues: set[str] = set()
     for turn in speakers:
         if turn.confidence is None or turn.confidence >= 0.65:
@@ -1144,7 +1186,64 @@ def _analysis_task(
         for code, message in analyzer.warnings
     )
     store.save(project)
-    progress("Saving", 95, "Saving captions and accessibility findings")
+    source_language = project.original_caption_track().language
+    existing_translation_languages = {
+        track.language for track in project.caption_tracks if track.kind == "translation"
+    }
+    for target_language in project.requested_caption_languages:
+        if target_language == source_language or target_language in existing_translation_languages:
+            continue
+        try:
+            progress(
+                "Creating translated captions",
+                96,
+                f"Translating the original captions to {target_language}",
+            )
+            create_translation_track(
+                project,
+                target_language,
+                store.models_dir,
+                progress,
+            )
+            store.save(project)
+            existing_translation_languages.add(target_language)
+        except StudioError as exc:
+            project.activate_caption_track(project.original_caption_track().id)
+            project.findings.append(
+                ValidationFinding(
+                    code="translation_skipped",
+                    message=f"Requested translation skipped: {exc.message}",
+                    severity=Severity.WARNING,
+                )
+            )
+            store.save(project)
+    project.activate_caption_track(project.original_caption_track().id)
+    store.save(project)
+    progress("Saving", 99, "Saving caption tracks and accessibility findings")
+
+
+def _parse_target_caption_languages(value: str) -> list[str]:
+    try:
+        raw = json.loads(value or "[]")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Caption languages are invalid") from exc
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail="Caption languages are invalid")
+    try:
+        return normalize_target_languages([str(item) for item in raw])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _require_original_caption_track(project: Project) -> None:
+    if project.active_caption_track().kind != "original":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This analysis tool works on the original spoken-language caption track. "
+                "Switch to the Original track first."
+            ),
+        )
 
 
 def _normalized_caption_text(value: str) -> str:

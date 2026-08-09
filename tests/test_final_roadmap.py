@@ -31,7 +31,7 @@ def test_schema_v2_migrates_language_and_sdh_defaults() -> None:
     payload = {"schema_version": 2, "name": "Legacy", "cues": []}
     migrated, changed = migrate_project_payload(payload)
     assert changed is True
-    assert migrated["schema_version"] == CURRENT_PROJECT_SCHEMA_VERSION == 3
+    assert migrated["schema_version"] == CURRENT_PROJECT_SCHEMA_VERSION == 4
     assert migrated["transcription_language"] == "en"
     assert migrated["sdh_mode"] == "full"
 
@@ -108,3 +108,4 @@ def test_model_manager_lists_individual_components(tmp_path: Path) -> None:
     assert "speaker-ecapa" in ids
     assert "sound-ast" in ids
     assert "face-yunet-sface" in ids
+    assert "translation-m2m100" in ids
