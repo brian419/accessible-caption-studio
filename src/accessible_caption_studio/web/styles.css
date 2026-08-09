@@ -317,6 +317,39 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
 .project-title { max-width: 520px; justify-self: center; border-color: transparent; background: transparent; font-size: 1.15rem; font-weight: 800; text-align: center; }
 .project-title:hover, .project-title:focus { background: var(--control); border-color: #aeb9ce; }
 .save-status { color: var(--teal); font-size: .84rem; }
+.workspace-actions > #saveStatus,
+.workspace-actions > #analyzeButton,
+.workspace-actions > #validateButton,
+.workspace-actions > #backupProjectButton {
+  height: 38px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  font-size: .84rem;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.workspace-actions > #saveStatus {
+  width: 88px;
+  min-width: 88px;
+  padding: 0 .75rem;
+  border: 1px solid #aeb9ce;
+  background: var(--control);
+  color: var(--teal);
+}
+.workspace-actions > #analyzeButton,
+.workspace-actions > #validateButton,
+.workspace-actions > #backupProjectButton {
+  padding: 0 .8rem;
+}
+.workspace-actions > #backupProjectButton {
+  width: 116px;
+  min-width: 116px;
+}
 .job-panel {
   position: sticky;
   top: calc(76px + .75rem);
