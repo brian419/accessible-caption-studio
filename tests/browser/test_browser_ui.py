@@ -209,13 +209,14 @@ def test_favorite_controls_share_one_centered_surface(page: Page, studio_url: st
     _open(page, studio_url)
     page.locator("body").evaluate(
         """body => {
-          const fixture = document.createElement('button');
-          fixture.id = 'font-favorite-style-fixture';
-          fixture.className = 'caption-font-favorite';
-          fixture.setAttribute('aria-label', 'Favorite font');
-          fixture.setAttribute('aria-pressed', 'false');
-          fixture.textContent = '☆';
-          body.append(fixture);
+          const fixture = document.createElement('div');
+          fixture.id = 'font-option-style-fixture';
+          fixture.className = 'caption-font-option';
+          fixture.innerHTML = `
+            <button class="caption-font-option-main" type="button"><span class="caption-font-option-name">Example Font</span></button>
+            <button id="font-favorite-style-fixture" class="caption-font-favorite" type="button" aria-label="Favorite font" aria-pressed="false">☆</button>`;
+          fixture.style.width = '414px';
+          document.body.append(fixture);
         }"""
     )
 
@@ -255,6 +256,25 @@ def test_favorite_controls_share_one_centered_surface(page: Page, studio_url: st
     assert card_surface["iconTransform"] == font_surface["iconTransform"]
     assert card_surface["mask"] == font_surface["mask"]
     assert "data:image/svg+xml;base64" in card_surface["mask"]
+
+    font_geometry = page.locator("#font-option-style-fixture").evaluate(
+        """row => {
+          const button = row.querySelector('.caption-font-favorite');
+          const rowRect = row.getBoundingClientRect();
+          const buttonRect = button.getBoundingClientRect();
+          return {
+            topInset: Math.round(buttonRect.top - rowRect.top),
+            bottomInset: Math.round(rowRect.bottom - buttonRect.bottom),
+            rightInset: Math.round(rowRect.right - buttonRect.right),
+            rowHeight: Math.round(rowRect.height),
+            buttonHeight: Math.round(buttonRect.height),
+          };
+        }"""
+    )
+    assert font_geometry["rowHeight"] == 60
+    assert font_geometry["buttonHeight"] == 34
+    assert abs(font_geometry["topInset"] - font_geometry["bottomInset"]) <= 1
+    assert font_geometry["rightInset"] == 8
 
     page.get_by_label("Project view").select_option("compact")
     compact_surface = favorite_surface(project)
