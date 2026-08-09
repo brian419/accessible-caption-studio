@@ -274,7 +274,8 @@ def test_favorite_controls_share_one_centered_surface(page: Page, studio_url: st
     assert font_geometry["rowHeight"] == 60
     assert font_geometry["buttonHeight"] == 34
     assert abs(font_geometry["topInset"] - font_geometry["bottomInset"]) <= 1
-    assert font_geometry["rightInset"] == 8
+    # Includes the font row's 1px outer border plus 8px inner spacing.
+    assert font_geometry["rightInset"] == 9
 
     page.get_by_label("Project view").select_option("compact")
     compact_surface = favorite_surface(project)
