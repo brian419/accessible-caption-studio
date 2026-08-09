@@ -13,7 +13,7 @@ ignored local `storage/` directory.
 
 ### Caption editor
 
-![Accessible Caption Studio caption editor](docs/caption-editor.png)
+![Accessible Caption Studio caption editor](docs/caption-editor.webp)
 
 ### Caption customization
 
@@ -25,7 +25,7 @@ ignored local `storage/` directory.
 
 ### Recent projects
 
-![Accessible Caption Studio recent projects screen](docs/recent-projects.png)
+![Accessible Caption Studio recent projects screen](docs/recent-projects.webp)
 
 ## What it does
 
