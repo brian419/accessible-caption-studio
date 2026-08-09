@@ -3525,7 +3525,7 @@ function toast(message, type = "info") {
     if (workspaceActions && !$("#backupProjectButton")) {
       const backup = document.createElement("button");
       backup.id = "backupProjectButton";
-      backup.className = "text-button workspace-utility-action";
+      backup.className = "secondary workspace-utility-action";
       backup.type = "button";
       backup.textContent = "Backup";
       backup.addEventListener("click", downloadProjectBackup);
@@ -3578,7 +3578,8 @@ function toast(message, type = "info") {
       button.disabled = true;
       button.classList.add("is-loading");
       button.setAttribute("aria-busy", "true");
-      button.textContent = "Preparing backup…";
+      button.setAttribute("aria-label", "Preparing project backup");
+      button.textContent = "Preparing…";
     }
     try {
       const response = await fetch(`/api/projects/${state.project.id}/backup`);
@@ -3607,6 +3608,7 @@ function toast(message, type = "info") {
         button.disabled = false;
         button.classList.remove("is-loading");
         button.removeAttribute("aria-busy");
+        button.removeAttribute("aria-label");
         button.textContent = "Backup";
       }
     }

@@ -433,7 +433,10 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
 
 
 def test_backup_button_shows_preparing_state_until_archive_is_ready(page: Page, studio_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
     _open(page, studio_url)
+    page.locator("#homeView").evaluate("element => { element.hidden = true; }")
+    page.locator("#workspaceView").evaluate("element => { element.hidden = false; }")
     page.evaluate(
         """() => {
           state.project = { id: 'backup-loading-fixture', name: 'Backup fixture' };
@@ -455,15 +458,49 @@ def test_backup_button_shows_preparing_state_until_archive_is_ready(page: Page, 
           HTMLAnchorElement.prototype.click = function clickBackupFixture() {
             window.__backupDownloadName = this.download;
           };
-          button.click();
         }"""
     )
 
+    toolbar_styles = page.locator(
+        '#saveStatus, #analyzeButton, #validateButton, #backupProjectButton'
+    ).evaluate_all(
+        """elements => elements.map(element => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            height: Math.round(rect.height),
+            background: style.backgroundColor,
+            border: style.borderColor,
+            radius: style.borderRadius,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+          };
+        })"""
+    )
+    assert {item["height"] for item in toolbar_styles} == {38}
+    assert len({item["background"] for item in toolbar_styles}) == 1
+    assert len({item["border"] for item in toolbar_styles}) == 1
+    assert len({item["radius"] for item in toolbar_styles}) == 1
+    assert len({item["fontSize"] for item in toolbar_styles}) == 1
+    assert len({item["fontWeight"] for item in toolbar_styles}) == 1
+
     button = page.locator('#backupProjectButton')
-    expect(button).to_have_text('Preparing backup…')
+    idle_geometry = button.evaluate(
+        "element => ({ width: Math.round(element.getBoundingClientRect().width), height: Math.round(element.getBoundingClientRect().height) })"
+    )
+    expect(button).to_have_text('Backup')
+    button.evaluate("element => element.click()")
+
+    expect(button).to_have_text('Preparing…')
     expect(button).to_be_disabled()
     expect(button).to_have_attribute('aria-busy', 'true')
+    expect(button).to_have_attribute('aria-label', 'Preparing project backup')
     assert button.evaluate("element => element.classList.contains('is-loading')")
+    loading_geometry = button.evaluate(
+        "element => ({ width: Math.round(element.getBoundingClientRect().width), height: Math.round(element.getBoundingClientRect().height) })"
+    )
+    assert loading_geometry == idle_geometry
+    assert button.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
 
     page.evaluate('window.__resolveBackup()')
     page.wait_for_function('window.__backupDownloadName !== null')
@@ -471,7 +508,12 @@ def test_backup_button_shows_preparing_state_until_archive_is_ready(page: Page, 
     expect(button).to_have_text('Backup')
     expect(button).to_be_enabled()
     assert button.evaluate("element => element.getAttribute('aria-busy')") is None
+    assert button.evaluate("element => element.getAttribute('aria-label')") is None
     assert not button.evaluate("element => element.classList.contains('is-loading')")
+    finished_geometry = button.evaluate(
+        "element => ({ width: Math.round(element.getBoundingClientRect().width), height: Math.round(element.getBoundingClientRect().height) })"
+    )
+    assert finished_geometry == idle_geometry
 
 
 def test_dynamic_project_job_status_has_space_below_note(page: Page, studio_url: str) -> None:
