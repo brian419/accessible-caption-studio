@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -147,26 +148,47 @@ def test_compact_view_keeps_copy_actions_and_favorite_separate(page: Page, studi
 
 def test_card_view_uses_uniform_heights_and_preserves_filename_extension(page: Page, studio_url: str) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
+    long_name = "portrait-recording-" + ("very-long-segment-" * 6) + ".mp4"
+    projects = [
+        {
+            "id": "uniform-long",
+            "name": long_name,
+            "cues": [],
+            "media": {"has_video": False},
+            "updated_at": "2026-08-09T07:00:00Z",
+            "is_favorite": False,
+        },
+        {
+            "id": "uniform-short",
+            "name": "short-project.mov",
+            "cues": [],
+            "media": {"has_video": False},
+            "updated_at": "2026-08-09T06:00:00Z",
+            "is_favorite": False,
+        },
+    ]
+    page.route(
+        "**/api/projects",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(projects)),
+    )
     _open(page, studio_url)
     page.get_by_label("Project view").select_option("default")
 
     cards = page.locator("#projectList .project-card")
-    if cards.count() >= 2:
-        heights = cards.evaluate_all("items => items.slice(0, 3).map(item => Math.round(item.getBoundingClientRect().height))")
-        assert len(set(heights)) == 1
+    expect(cards).to_have_count(2)
+    heights = cards.evaluate_all("items => items.map(item => Math.round(item.getBoundingClientRect().height))")
+    assert len(set(heights)) == 1
+    assert heights[0] == 272
 
-    page.locator("#projectList").evaluate(
-        """list => {
-          const card = document.createElement('article');
-          card.id = 'extension-card-regression';
-          card.className = 'project-card';
-          card.dataset.projectId = '__extension_test__';
-          card.innerHTML = `<button class="project-open" type="button"><img class="project-thumbnail" alt=""><strong>placeholder.mp4</strong><span>1 caption · now</span></button><div class="project-card-actions"><button>Duplicate</button></div>`;
-          list.append(card);
-        }"""
-    )
-    card = page.locator("#extension-card-regression")
-    assert round(card.evaluate("element => element.getBoundingClientRect().height")) in (264, 272)
+    long_title = page.locator('[data-project-id="uniform-long"] .project-open > strong')
+    displayed = long_title.inner_text()
+    assert displayed.endswith(".mp4")
+    assert displayed != long_name
+    assert len(displayed) < len(long_name)
+    expect(long_title).to_have_attribute("title", long_name)
+
+    page.get_by_label("Project view").select_option("compact")
+    expect(long_title).to_have_text(long_name)
 
 
 def test_basic_accessibility_structure_and_settings_focus(page: Page, studio_url: str) -> None:
