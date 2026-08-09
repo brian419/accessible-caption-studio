@@ -361,3 +361,89 @@ def test_localization_controls_distinguish_spoken_and_caption_languages(page: Pa
     expect(page.locator("#defaultCaptionLanguageChips")).to_contain_text("French")
     expect(page.locator("#captioningOptionsSummary")).to_contain_text("Spanish")
     expect(page.locator("#captioningOptionsSummary")).to_contain_text("+1 translation")
+
+
+
+def test_caption_localization_toolbar_sits_below_editor_tools_and_reflows(page: Page, studio_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
+    _open(page, studio_url)
+
+    source = page.evaluate("() => fetch('/final_batch.js').then((response) => response.text())")
+    assert 'heading.after(bar);' in source
+
+    page.locator("#homeView").evaluate("element => { element.hidden = true; }")
+    page.locator("#workspaceView").evaluate("element => { element.hidden = false; }")
+    page.locator(".editor-panel").evaluate(
+        """panel => {
+          const heading = panel.querySelector('.editor-heading');
+          const bar = document.createElement('div');
+          bar.id = 'captionTrackBarFixture';
+          bar.className = 'caption-track-bar';
+          bar.innerHTML = `
+            <div class="caption-track-heading">
+              <div>
+                <span class="caption-track-eyebrow">Caption localization</span>
+                <span class="caption-track-description">Switch languages and manage translated caption tracks.</span>
+              </div>
+            </div>
+            <div class="caption-track-controls">
+              <div class="caption-track-current">
+                <label class="caption-track-field">Caption track
+                  <select><option>Korean · Translation · needs update</option></select>
+                </label>
+                <span class="caption-track-status needs-update">Source changed · review again</span>
+              </div>
+              <div class="caption-track-create">
+                <span class="caption-track-control-label">Add translation</span>
+                <div class="caption-track-add">
+                  <select><option>Choose language…</option></select>
+                  <button class="secondary editor-action" type="button">Create translation</button>
+                </div>
+              </div>
+            </div>
+            <div class="caption-track-actions">
+              <span class="caption-track-actions-label">Translation actions</span>
+              <button class="secondary editor-action" type="button">Mark reviewed</button>
+              <button class="secondary editor-action" type="button">Regenerate</button>
+              <button class="secondary editor-action" type="button">Delete translation</button>
+            </div>`;
+          heading.after(bar);
+        }"""
+    )
+
+    bar = page.locator("#captionTrackBarFixture")
+    expect(bar).to_be_visible()
+    desktop = bar.evaluate(
+        """bar => {
+          const heading = document.querySelector('.editor-heading').getBoundingClientRect();
+          const box = bar.getBoundingClientRect();
+          const current = bar.querySelector('.caption-track-current').getBoundingClientRect();
+          const create = bar.querySelector('.caption-track-create').getBoundingClientRect();
+          return {
+            top: Math.round(box.top),
+            headingBottom: Math.round(heading.bottom),
+            overflow: Math.round(bar.scrollWidth - bar.clientWidth),
+            currentTop: Math.round(current.top),
+            createTop: Math.round(create.top),
+          };
+        }"""
+    )
+    assert desktop["top"] >= desktop["headingBottom"] - 1
+    assert desktop["overflow"] <= 1
+    assert abs(desktop["currentTop"] - desktop["createTop"]) <= 2
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    mobile = bar.evaluate(
+        """bar => {
+          const current = bar.querySelector('.caption-track-current').getBoundingClientRect();
+          const create = bar.querySelector('.caption-track-create').getBoundingClientRect();
+          return {
+            overflow: Math.round(bar.scrollWidth - bar.clientWidth),
+            currentBottom: Math.round(current.bottom),
+            createTop: Math.round(create.top),
+          };
+        }"""
+    )
+    assert mobile["overflow"] <= 1
+    assert mobile["createTop"] >= mobile["currentBottom"]
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")

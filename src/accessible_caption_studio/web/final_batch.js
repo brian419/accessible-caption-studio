@@ -128,21 +128,36 @@
       .caption-language-chip { display:inline-flex; align-items:center; gap:.35rem; min-height:30px; padding:.25rem .35rem .25rem .55rem; border:1px solid var(--line); border-radius:999px; background:var(--paper); font-size:.74rem; font-weight:750; }
       .caption-language-chip button { width:22px; height:22px; min-height:22px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--muted); font:inherit; }
       .caption-target-empty { margin:0; color:var(--muted); font-size:.72rem; }
-      .caption-track-bar { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:.75rem; margin:0 0 .75rem; padding:.75rem; border:1px solid var(--line); border-radius:11px; background:color-mix(in srgb,var(--wash) 68%,var(--paper)); }
-      .caption-track-main { min-width:0; display:grid; grid-template-columns:minmax(190px,1fr) auto; align-items:end; gap:.65rem; }
+      .caption-track-bar { display:grid; gap:.65rem; margin:.05rem 0 .85rem; padding:.72rem 0 .8rem; border-top:1px solid var(--soft-line); border-bottom:1px solid var(--soft-line); background:transparent; }
+      .caption-track-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; min-width:0; }
+      .caption-track-heading > div { min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:.4rem .65rem; }
+      .caption-track-eyebrow { color:var(--blue); font-size:.67rem; font-weight:900; letter-spacing:.09em; text-transform:uppercase; }
+      .caption-track-description { color:var(--muted); font-size:.72rem; line-height:1.4; }
+      .caption-track-controls { min-width:0; display:grid; grid-template-columns:minmax(230px,.9fr) minmax(270px,1.1fr); gap:.75rem; align-items:end; }
+      .caption-track-current { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:.5rem; }
+      .caption-track-create { min-width:0; display:grid; gap:.28rem; }
       .caption-track-field { display:grid; gap:.28rem; min-width:0; font-size:.72rem; font-weight:800; color:var(--muted); }
-      .caption-track-field select { width:100%; min-height:38px; border:1px solid #aeb9ce; border-radius:9px; padding:.45rem .6rem; color:var(--ink); background:var(--control); }
-      .caption-track-status { display:inline-flex; align-items:center; min-height:30px; padding:.3rem .55rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
+      .caption-track-control-label { color:var(--muted); font-size:.72rem; font-weight:800; }
+      .caption-track-field select, .caption-track-add select { width:100%; min-width:0; min-height:38px; border:1px solid #aeb9ce; border-radius:9px; padding:.45rem .6rem; color:var(--ink); background:var(--control); }
+      .caption-track-status { display:inline-flex; align-items:center; align-self:end; min-height:30px; padding:.3rem .55rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
       .caption-track-status.needs-update { color:#8a4b08; border-color:#e7c089; background:#fff7e8; }
-      .caption-track-actions { display:flex; flex-wrap:wrap; align-items:end; justify-content:flex-end; gap:.45rem; }
-      .caption-track-add { display:grid; grid-template-columns:minmax(150px,1fr) auto; gap:.4rem; align-items:end; }
-      .caption-track-add select { min-height:36px; border:1px solid #aeb9ce; border-radius:9px; padding:.4rem .55rem; color:var(--ink); background:var(--control); }
+      .caption-track-add { min-width:0; display:grid; grid-template-columns:minmax(170px,1fr) auto; gap:.4rem; align-items:end; }
+      .caption-track-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; min-width:0; }
+      .caption-track-actions[hidden] { display:none !important; }
+      .caption-track-actions-label { margin-right:.1rem; color:var(--muted); font-size:.68rem; font-weight:850; }
       .caption-track-context { margin:.55rem 0 0; padding:.55rem .7rem; border-radius:8px; background:var(--wash); color:var(--muted); font-size:.75rem; }
       @media (max-width:760px) {
-        .caption-track-bar { grid-template-columns:1fr; align-items:stretch; }
-        .caption-track-main { grid-template-columns:1fr; align-items:stretch; }
-        .caption-track-actions { justify-content:stretch; }
-        .caption-track-add { width:100%; grid-template-columns:1fr auto; }
+        .caption-track-controls { grid-template-columns:1fr; align-items:stretch; }
+        .caption-track-current { grid-template-columns:minmax(0,1fr) auto; }
+        .caption-track-actions { align-items:flex-start; }
+      }
+      @media (max-width:480px) {
+        .caption-track-current { grid-template-columns:1fr; align-items:stretch; }
+        .caption-track-status { justify-self:start; }
+        .caption-track-add { grid-template-columns:1fr; }
+        .caption-track-add button { width:100%; }
+        .caption-track-actions { align-items:stretch; }
+        .caption-track-actions-label { flex-basis:100%; }
       }
       @media (max-width:560px) {
         .captioning-options-grid { grid-template-columns:1fr; }
@@ -575,14 +590,15 @@
 
   function installCaptionTrackContext() {
     const panel = document.querySelector(".editor-panel");
-    if (!panel) return null;
+    const heading = panel?.querySelector(".editor-heading");
+    if (!panel || !heading) return null;
     let bar = document.querySelector("#captionTrackBar");
     if (!bar) {
       bar = document.createElement("div");
       bar.id = "captionTrackBar";
       bar.className = "caption-track-bar";
-      panel.prepend(bar);
     }
+    heading.after(bar);
     return bar;
   }
 
@@ -597,21 +613,32 @@
     const sourceLanguage = tracks.find((track) => track.kind === "original")?.language || project.detected_language || project.spoken_language || "en";
     const availableTargets = languages.filter(([code]) => code !== "auto" && code !== sourceLanguage && !existingTargets.has(code));
     bar.innerHTML = `
-      <div class="caption-track-main">
-        <label class="caption-track-field" for="captionTrackSelect">Caption track
-          <select id="captionTrackSelect" aria-label="Caption track"></select>
-        </label>
-        <span id="captionTrackStatus" class="caption-track-status"></span>
-      </div>
-      <div class="caption-track-actions">
-        <div class="caption-track-add">
-          <label class="sr-only" for="captionTranslationLanguage">Add translated caption language</label>
-          <select id="captionTranslationLanguage" aria-label="Add translated caption language">
-            <option value="">Add translation…</option>
-            ${optionMarkup(availableTargets)}
-          </select>
-          <button id="createCaptionTranslation" class="secondary editor-action" type="button">Create</button>
+      <div class="caption-track-heading">
+        <div>
+          <span class="caption-track-eyebrow">Caption localization</span>
+          <span class="caption-track-description">Switch languages and manage translated caption tracks.</span>
         </div>
+      </div>
+      <div class="caption-track-controls">
+        <div class="caption-track-current">
+          <label class="caption-track-field" for="captionTrackSelect">Caption track
+            <select id="captionTrackSelect" aria-label="Caption track"></select>
+          </label>
+          <span id="captionTrackStatus" class="caption-track-status"></span>
+        </div>
+        <div class="caption-track-create">
+          <span id="captionTranslationLabel" class="caption-track-control-label">Add translation</span>
+          <div class="caption-track-add">
+            <select id="captionTranslationLanguage" aria-labelledby="captionTranslationLabel">
+              <option value="">Choose language…</option>
+              ${optionMarkup(availableTargets)}
+            </select>
+            <button id="createCaptionTranslation" class="secondary editor-action" type="button">Create translation</button>
+          </div>
+        </div>
+      </div>
+      <div class="caption-track-actions" role="group" aria-label="Active translation actions">
+        <span class="caption-track-actions-label">Translation actions</span>
         <button id="captionTrackReview" class="secondary editor-action" type="button"></button>
         <button id="regenerateCaptionTranslation" class="secondary editor-action" type="button">Regenerate</button>
         <button id="deleteCaptionTranslation" class="secondary editor-action" type="button">Delete translation</button>
@@ -632,6 +659,7 @@
     const regenerate = bar.querySelector("#regenerateCaptionTranslation");
     const remove = bar.querySelector("#deleteCaptionTranslation");
     const translated = active?.kind === "translation";
+    bar.querySelector(".caption-track-actions").hidden = !translated;
     review.hidden = !translated;
     regenerate.hidden = !translated;
     remove.hidden = !translated;
