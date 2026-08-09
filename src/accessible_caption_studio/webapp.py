@@ -23,7 +23,11 @@ from .enhanced_analyzer import LocalAnalyzer
 from .errors import StudioError
 from .exports import export_captioned_mp4, export_text
 from .jobs import JobManager
-from .localization import create_translation_track, normalize_target_languages
+from .localization import (
+    create_translation_track,
+    normalize_target_languages,
+    translation_findings,
+)
 from .localization_routes import register_localization_routes, start_translation_job
 from .media import download_youtube, extract_audio, inspect_media
 from .models import (
@@ -423,9 +427,20 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             project.name = request.name
         if request.cues is not None:
             project.cues = request.cues
-            project.findings = validate_cues(
-                project.cues, project.media.duration if project.media else None
-            )
+            duration = project.media.duration if project.media else None
+            active_track = project.active_caption_track()
+            if active_track.kind == "translation":
+                source = project.original_caption_track()
+                project.findings = translation_findings(
+                    source.cues,
+                    project.cues,
+                    source.language,
+                    active_track.language,
+                    duration,
+                )
+            else:
+                project.findings = validate_cues(project.cues, duration)
+                project.mark_translation_tracks_stale()
         if request.speaker_names is not None:
             project.speaker_names = request.speaker_names
         if request.transcription_quality is not None:
@@ -682,6 +697,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/speaker-proposals/{job_id}/apply")
     def apply_speaker_proposal(project_id: str, job_id: str) -> Project:
         project = _get_project(store, project_id)
+        _require_original_caption_track(project)
         try:
             job = jobs.get(project_id, job_id)
         except KeyError as exc:
@@ -715,6 +731,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         project.findings = [
             ValidationFinding.model_validate(item) for item in result["findings"]
         ]
+        project.mark_translation_tracks_stale()
         evidence_name = result.get("evidence_temp")
         if evidence_name:
             source = store.project_dir(project_id) / safe_filename(evidence_name)
@@ -834,6 +851,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/transcript-proposals/{job_id}/apply")
     def apply_transcript_proposal(project_id: str, job_id: str) -> Project:
         project = _get_project(store, project_id)
+        _require_original_caption_track(project)
         try:
             job = jobs.get(project_id, job_id)
         except KeyError as exc:
@@ -858,6 +876,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         project.findings = [
             ValidationFinding.model_validate(item) for item in result["findings"]
         ]
+        project.mark_translation_tracks_stale()
         project.face_tracks = result.get("face_tracks", [])
         project.visual_speaker_status = result.get("visual_speaker_status", "not_analyzed")
         project.speaker_engine = result.get("speaker_engine", "sface_ecapa_v1")
@@ -874,9 +893,19 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     @app.post("/api/projects/{project_id}/validate")
     def validate_project(project_id: str) -> Project:
         project = _get_project(store, project_id)
-        project.findings = validate_cues(
-            project.cues, project.media.duration if project.media else None
-        )
+        duration = project.media.duration if project.media else None
+        active_track = project.active_caption_track()
+        if active_track.kind == "translation":
+            source = project.original_caption_track()
+            project.findings = translation_findings(
+                source.cues,
+                project.cues,
+                source.language,
+                active_track.language,
+                duration,
+            )
+        else:
+            project.findings = validate_cues(project.cues, duration)
         return store.save(project)
 
     @app.get("/api/projects/{project_id}/media")
