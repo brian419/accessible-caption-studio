@@ -83,7 +83,7 @@ h1 { font-size: clamp(2.2rem, 6vw, 4.4rem); letter-spacing: -.055em; line-height
 [role="tabpanel"] { padding: 1.5rem; }
 .drop-zone { min-height: 230px; border: 2px dashed #9aa9c8; border-radius: 15px; display: grid; place-items: center; align-content: center; gap: .45rem; background: var(--drop); color: var(--muted); transition: .2s; }
 .drop-zone:hover, .drop-zone.dragging { border-color: var(--blue); background: var(--sky); }
-.drop-zone strong { color: var(--ink); font-size: 1.1rem; }
+.drop-zone strong { color: var(--ink); font-size: 1.1rem; width: min(100%, 42rem); max-width: calc(100% - 2rem); min-width: 0; padding-inline: .5rem; text-align: center; line-height: 1.35; overflow-wrap: anywhere; word-break: break-word; }
 .drop-zone input { width: 1px; height: 1px; opacity: 0; position: absolute; }
 .upload-icon { background: var(--sky); color: var(--blue); width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; font-size: 1.5rem; font-weight: 700; }
 .optional-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 1rem 0; padding: .85rem 1rem; background: var(--wash); border-radius: 10px; }
