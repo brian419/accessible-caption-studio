@@ -1728,3 +1728,21 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
     transform: translateY(.5px) scale(.92);
   }
 }
+
+
+
+/* Caption font favorite cell alignment */
+.caption-font-option {
+  grid-template-columns: minmax(0, 1fr) 50px;
+  align-items: center;
+}
+
+.caption-font-option-main {
+  align-self: stretch;
+}
+
+.caption-font-favorite {
+  align-self: center !important;
+  justify-self: center !important;
+  margin: 0 !important;
+}
