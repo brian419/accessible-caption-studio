@@ -24,8 +24,12 @@ def _encoders() -> str:
 
 
 def _video(path: Path, size: str, codec: str, *, frames: int = 2) -> None:
-    if codec not in _encoders():
+    encoders = _encoders()
+    if codec not in encoders:
         pytest.skip(f"FFmpeg encoder {codec} is unavailable")
+    audio_codec = "libopus" if path.suffix.lower() == ".webm" else "aac"
+    if audio_codec not in encoders:
+        pytest.skip(f"FFmpeg encoder {audio_codec} is unavailable")
     subprocess.run(
         [
             _ffmpeg(),
@@ -34,12 +38,20 @@ def _video(path: Path, size: str, codec: str, *, frames: int = 2) -> None:
             "lavfi",
             "-i",
             f"color=c=navy:s={size}:r=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=16000:cl=mono",
             "-frames:v",
             str(frames),
+            "-t",
+            "1",
             "-c:v",
             codec,
             "-pix_fmt",
             "yuv420p",
+            "-c:a",
+            audio_codec,
             str(path),
         ],
         check=True,
@@ -64,6 +76,7 @@ def test_generated_video_corpus(
     _video(path, size, codec, frames=1 if "4k" in filename else 2)
     media = inspect_media(path)
     assert media.has_video is True
+    assert media.has_audio is True
     assert (media.width, media.height) == expected
 
 
@@ -76,7 +89,11 @@ def test_generated_audio_only_corpus(tmp_path: Path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "sine=frequency=440:duration=.25",
+            "anullsrc=r=16000:cl=mono",
+            "-t",
+            "0.25",
+            "-c:a",
+            "pcm_s16le",
             str(path),
         ],
         check=True,
@@ -92,5 +109,6 @@ def test_generated_long_filename_media(tmp_path: Path) -> None:
     _video(path, "108x192", "libx264")
     media = inspect_media(path)
     assert media.has_video is True
+    assert media.has_audio is True
     assert media.width == 108
     assert media.height == 192
