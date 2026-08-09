@@ -1,0 +1,29 @@
+name: Apply workspace action consistency
+
+on:
+  push:
+    paths:
+      - '.github/workspace-action-consistency-trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: small-fixes-2026-08-09
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python scripts/apply_workspace_action_consistency.py
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/styles.css src/accessible_caption_studio/web/app.js tests/browser/test_browser_ui.py
+          git commit -m "Unify workspace action controls"
+          git push origin HEAD:small-fixes-2026-08-09
