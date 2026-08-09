@@ -128,36 +128,37 @@
       .caption-language-chip { display:inline-flex; align-items:center; gap:.35rem; min-height:30px; padding:.25rem .35rem .25rem .55rem; border:1px solid var(--line); border-radius:999px; background:var(--paper); font-size:.74rem; font-weight:750; }
       .caption-language-chip button { width:22px; height:22px; min-height:22px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--muted); font:inherit; }
       .caption-target-empty { margin:0; color:var(--muted); font-size:.72rem; }
-      .caption-track-bar { display:grid; gap:.65rem; margin:.05rem 0 .85rem; padding:.72rem 0 .8rem; border-top:1px solid var(--soft-line); border-bottom:1px solid var(--soft-line); background:transparent; }
+      .caption-track-bar { display:grid; gap:1rem; margin:0 0 .85rem; padding:1rem 1rem 1.05rem; border-top:0; border-bottom:1px solid var(--soft-line); background:transparent; }
       .caption-track-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; min-width:0; }
-      .caption-track-heading > div { min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:.4rem .65rem; }
+      .caption-track-heading > div { min-width:0; display:grid; gap:.18rem; }
       .caption-track-eyebrow { color:var(--blue); font-size:.67rem; font-weight:900; letter-spacing:.09em; text-transform:uppercase; }
-      .caption-track-description { color:var(--muted); font-size:.72rem; line-height:1.4; }
-      .caption-track-controls { min-width:0; display:grid; grid-template-columns:minmax(230px,.9fr) minmax(270px,1.1fr); gap:.75rem; align-items:end; }
-      .caption-track-current { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:.5rem; }
-      .caption-track-create { min-width:0; display:grid; gap:.28rem; }
-      .caption-track-field { display:grid; gap:.28rem; min-width:0; font-size:.72rem; font-weight:800; color:var(--muted); }
+      .caption-track-description { color:var(--muted); font-size:.74rem; line-height:1.45; }
+      .caption-track-controls { min-width:0; display:grid; grid-template-columns:1fr; gap:1rem; align-items:stretch; }
+      .caption-track-current { min-width:0; display:grid; grid-template-columns:minmax(240px,320px) auto; align-items:end; justify-content:start; gap:.75rem; }
+      .caption-track-create { min-width:0; display:grid; gap:.38rem; max-width:560px; }
+      .caption-track-field { display:grid; gap:.38rem; min-width:0; font-size:.72rem; font-weight:800; color:var(--muted); }
       .caption-track-control-label { color:var(--muted); font-size:.72rem; font-weight:800; }
       .caption-track-field select, .caption-track-add select { width:100%; min-width:0; min-height:38px; border:1px solid #aeb9ce; border-radius:9px; padding:.45rem .6rem; color:var(--ink); background:var(--control); }
-      .caption-track-status { display:inline-flex; align-items:center; align-self:end; min-height:30px; padding:.3rem .55rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
+      .caption-track-status { display:inline-flex; align-items:center; align-self:end; justify-self:start; min-height:34px; padding:.35rem .65rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
       .caption-track-status.needs-update { color:#8a4b08; border-color:#e7c089; background:#fff7e8; }
-      .caption-track-add { min-width:0; display:grid; grid-template-columns:minmax(170px,1fr) auto; gap:.4rem; align-items:end; }
-      .caption-track-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; min-width:0; }
+      .caption-track-add { min-width:0; display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:.55rem; align-items:end; }
+      .caption-track-actions { display:grid; grid-template-columns:repeat(3,max-content); align-items:center; justify-content:start; gap:.45rem .5rem; min-width:0; }
       .caption-track-actions[hidden] { display:none !important; }
-      .caption-track-actions-label { margin-right:.1rem; color:var(--muted); font-size:.68rem; font-weight:850; }
+      .caption-track-actions-label { grid-column:1 / -1; margin:0 0 .05rem; color:var(--muted); font-size:.68rem; font-weight:850; }
       .caption-track-context { margin:.55rem 0 0; padding:.55rem .7rem; border-radius:8px; background:var(--wash); color:var(--muted); font-size:.75rem; }
-      @media (max-width:760px) {
-        .caption-track-controls { grid-template-columns:1fr; align-items:stretch; }
-        .caption-track-current { grid-template-columns:minmax(0,1fr) auto; }
-        .caption-track-actions { align-items:flex-start; }
+      @media (max-width:680px) {
+        .caption-track-bar { padding:.9rem .85rem 1rem; }
+        .caption-track-current { grid-template-columns:1fr; align-items:stretch; gap:.45rem; }
+        .caption-track-status { align-self:start; }
+        .caption-track-create { max-width:none; }
+        .caption-track-actions { grid-template-columns:repeat(2,max-content); }
       }
       @media (max-width:480px) {
-        .caption-track-current { grid-template-columns:1fr; align-items:stretch; }
-        .caption-track-status { justify-self:start; }
         .caption-track-add { grid-template-columns:1fr; }
         .caption-track-add button { width:100%; }
-        .caption-track-actions { align-items:stretch; }
-        .caption-track-actions-label { flex-basis:100%; }
+        .caption-track-actions { grid-template-columns:1fr; align-items:stretch; }
+        .caption-track-actions button { width:100%; }
+        .caption-track-actions-label { grid-column:1; }
       }
       @media (max-width:560px) {
         .captioning-options-grid { grid-template-columns:1fr; }

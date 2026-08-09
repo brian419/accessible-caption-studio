@@ -423,14 +423,14 @@ def test_caption_localization_toolbar_sits_below_editor_tools_and_reflows(page: 
             top: Math.round(box.top),
             headingBottom: Math.round(heading.bottom),
             overflow: Math.round(bar.scrollWidth - bar.clientWidth),
-            currentTop: Math.round(current.top),
+            currentBottom: Math.round(current.bottom),
             createTop: Math.round(create.top),
           };
         }"""
     )
     assert desktop["top"] >= desktop["headingBottom"] - 1
     assert desktop["overflow"] <= 1
-    assert abs(desktop["currentTop"] - desktop["createTop"]) <= 2
+    assert desktop["createTop"] >= desktop["currentBottom"] + 8
 
     page.set_viewport_size({"width": 390, "height": 844})
     mobile = bar.evaluate(
