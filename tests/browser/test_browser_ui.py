@@ -351,6 +351,7 @@ def test_project_view_mode_persists_between_visits(page: Page, studio_url: str) 
 
 def test_localization_controls_distinguish_spoken_and_caption_languages(page: Page, studio_url: str) -> None:
     _open(page, studio_url)
+    page.locator("#captioningOptions > summary").click()
     spoken = page.locator("#defaultTranscriptionLanguage")
     target = page.locator("#defaultTargetCaptionLanguage")
     expect(spoken).to_be_visible()

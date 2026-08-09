@@ -1,1 +1,0 @@
-open the collapsed captioning options before interacting with localization controls
