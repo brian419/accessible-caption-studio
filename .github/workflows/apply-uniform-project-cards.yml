@@ -1,0 +1,38 @@
+name: Apply uniform Recent Projects cards
+
+on:
+  push:
+    branches:
+      - major-iterations-batch-2
+    paths:
+      - .github/uniform-project-cards-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations-batch-2
+          fetch-depth: 0
+
+      - name: Apply uniform card patch
+        run: |
+          python scripts/apply_uniform_project_cards.py
+          node --check src/accessible_caption_studio/web/final_batch.js
+
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/final_batch.js tests/browser/test_browser_ui.py
+          if git diff --cached --quiet; then
+            echo "No product changes to commit."
+            exit 0
+          fi
+          git commit -m "Make Recent Projects cards uniform"
+          git push origin HEAD:major-iterations-batch-2
