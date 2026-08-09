@@ -52,7 +52,18 @@ def _caption_text(project: Project, cue: CaptionCue) -> str:
     return f"{speaker}: {cue.text}" if speaker else cue.text
 
 
-def _render_items(project: Project) -> list[tuple[float, float, str]]:
+def _style_for_cue(project: Project, cue: CaptionCue) -> CaptionStyle:
+    style = project.caption_style.model_copy(deep=True)
+    if cue.position_override is not None:
+        style.position = cue.position_override
+    if cue.alignment_override is not None:
+        style.alignment = cue.alignment_override
+    if cue.vertical_margin_percent_override is not None:
+        style.vertical_margin_percent = cue.vertical_margin_percent_override
+    return style
+
+
+def _render_items(project: Project) -> list[tuple[float, float, str, CaptionStyle]]:
     """Match the browser preview by joining intentionally grouped overlapping cues."""
     ordered = sorted(project.cues, key=lambda cue: (cue.start, cue.end, cue.id))
     grouped: dict[str, list[CaptionCue]] = {}
@@ -60,7 +71,7 @@ def _render_items(project: Project) -> list[tuple[float, float, str]]:
         if cue.overlap_group_id:
             grouped.setdefault(cue.overlap_group_id, []).append(cue)
 
-    rendered: list[tuple[float, float, str]] = []
+    rendered: list[tuple[float, float, str, CaptionStyle]] = []
     seen_groups: set[str] = set()
     for cue in ordered:
         group_id = cue.overlap_group_id
@@ -74,10 +85,11 @@ def _render_items(project: Project) -> list[tuple[float, float, str]]:
                     min(member.start for member in members),
                     max(member.end for member in members),
                     "\n".join(_caption_text(project, member) for member in members),
+                    _style_for_cue(project, members[0]),
                 )
             )
         else:
-            rendered.append((cue.start, cue.end, _caption_text(project, cue)))
+            rendered.append((cue.start, cue.end, _caption_text(project, cue), _style_for_cue(project, cue)))
     return rendered
 
 
@@ -326,20 +338,20 @@ def _write_filter_script(project: Project, temporary_dir: Path) -> Path:
         )
         return script
 
-    entries: list[tuple[Path, float, float, int, int]] = []
-    for item_index, (start, end, text) in enumerate(items):
-        lines = _wrap_export_text(text, project.caption_style, video_width, video_height)
+    entries: list[tuple[Path, float, float, int, int, CaptionStyle]] = []
+    for item_index, (start, end, text, item_style) in enumerate(items):
+        lines = _wrap_export_text(text, item_style, video_width, video_height)
         for line_index, line in enumerate(lines):
             text_path = temporary_dir / f"caption-{item_index:05d}-{line_index:02d}.txt"
             text_path.write_text(line, encoding="utf-8")
-            entries.append((text_path, start, end, line_index, len(lines)))
+            entries.append((text_path, start, end, line_index, len(lines), item_style))
 
     current = "[normalized]"
     filters: list[str] = [f"[0:v]{normalization}[normalized]"]
-    for index, (text_path, start, end, line_index, total_lines) in enumerate(entries):
+    for index, (text_path, start, end, line_index, total_lines, item_style) in enumerate(entries):
         output = "[captioned]" if index == len(entries) - 1 else f"[caption{index}]"
         drawtext = _drawtext_filter(
-            project.caption_style,
+            item_style,
             text_path,
             start,
             end,

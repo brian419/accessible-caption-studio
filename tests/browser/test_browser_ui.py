@@ -22,6 +22,7 @@ def test_home_desktop_controls_and_no_horizontal_overflow(page: Page, studio_url
     expect(page.get_by_label("Search projects")).to_be_visible()
     expect(page.locator("#projectTypeFilter")).to_be_visible()
     expect(page.get_by_label("Sort")).to_be_visible()
+    expect(page.get_by_role("button", name="Restore backup")).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
 
 
