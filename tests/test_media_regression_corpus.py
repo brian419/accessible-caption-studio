@@ -23,7 +23,14 @@ def _encoders() -> str:
     ).stdout
 
 
-def _video(path: Path, size: str, codec: str, *, frames: int = 2) -> None:
+def _video(
+    path: Path,
+    size: str,
+    codec: str,
+    *,
+    frame_rate: int = 24,
+    frames: int = 2,
+) -> None:
     encoders = _encoders()
     if codec not in encoders:
         pytest.skip(f"FFmpeg encoder {codec} is unavailable")
@@ -37,7 +44,7 @@ def _video(path: Path, size: str, codec: str, *, frames: int = 2) -> None:
             "-f",
             "lavfi",
             "-i",
-            f"color=c=navy:s={size}:r=2",
+            f"color=c=navy:s={size}:r={frame_rate}",
             "-f",
             "lavfi",
             "-i",
@@ -60,20 +67,25 @@ def _video(path: Path, size: str, codec: str, *, frames: int = 2) -> None:
 
 
 @pytest.mark.parametrize(
-    ("filename", "size", "codec", "expected"),
+    ("filename", "size", "codec", "frame_rate", "expected"),
     [
-        ("landscape.mp4", "320x180", "libx264", (320, 180)),
-        ("portrait.mp4", "180x320", "libx264", (180, 320)),
-        ("low-resolution.mov", "96x54", "mpeg4", (96, 54)),
-        ("browser-source.webm", "160x90", "libvpx-vp9", (160, 90)),
-        ("4k-single-frame.mp4", "3840x2160", "libx264", (3840, 2160)),
+        ("landscape-24fps.mp4", "320x180", "libx264", 24, (320, 180)),
+        ("portrait-30fps.mp4", "180x320", "libx264", 30, (180, 320)),
+        ("low-resolution-60fps.mov", "96x54", "mpeg4", 60, (96, 54)),
+        ("browser-source-25fps.webm", "160x90", "libvpx-vp9", 25, (160, 90)),
+        ("4k-single-frame-24fps.mp4", "3840x2160", "libx264", 24, (3840, 2160)),
     ],
 )
 def test_generated_video_corpus(
-    tmp_path: Path, filename: str, size: str, codec: str, expected: tuple[int, int]
+    tmp_path: Path,
+    filename: str,
+    size: str,
+    codec: str,
+    frame_rate: int,
+    expected: tuple[int, int],
 ) -> None:
     path = tmp_path / filename
-    _video(path, size, codec, frames=1 if "4k" in filename else 2)
+    _video(path, size, codec, frame_rate=frame_rate, frames=1 if "4k" in filename else 2)
     media = inspect_media(path)
     assert media.has_video is True
     assert media.has_audio is True
@@ -106,7 +118,7 @@ def test_generated_audio_only_corpus(tmp_path: Path) -> None:
 
 def test_generated_long_filename_media(tmp_path: Path) -> None:
     path = tmp_path / (("portrait-phone-source-" * 8) + ".mp4")
-    _video(path, "108x192", "libx264")
+    _video(path, "108x192", "libx264", frame_rate=30)
     media = inspect_media(path)
     assert media.has_video is True
     assert media.has_audio is True
