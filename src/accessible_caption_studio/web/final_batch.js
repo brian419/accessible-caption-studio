@@ -93,9 +93,9 @@
       .project-grid:not(.project-grid-compact) .project-open > strong { width:100%; max-width:none; min-height:3.1rem; max-height:3.1rem; margin:0; padding:.72rem .9rem .18rem; font-size:.96rem; line-height:1.3; white-space:normal; overflow-wrap:anywhere; word-break:break-word; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
       .project-grid:not(.project-grid-compact) .project-open > span:not(.project-type):not(.project-job-status) { width:100%; min-height:1.15rem; padding:0 .9rem .55rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .project-grid:not(.project-grid-compact) .project-job-status { margin:.05rem .9rem .75rem; }
-      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-open > span:not(.project-type):not(.project-job-status) { padding-bottom:.2rem; }
-      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status { margin:.05rem .9rem .35rem; padding-bottom:0; }
-      .project-grid:not(.project-grid-compact) .project-card-actions { margin:auto .9rem .85rem; padding-top:.7rem; }
+      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-open > span:not(.project-type):not(.project-job-status) { padding-bottom:0; }
+      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status { margin:.05rem .9rem 0; padding-bottom:0; }
+      .project-grid:not(.project-grid-compact) .project-card-actions { margin:auto .9rem .85rem; padding-top:.4rem; }
       .project-grid:not(.project-grid-compact) .project-favorite { top:.55rem; right:.55rem; background:color-mix(in srgb,var(--paper) 86%,transparent); box-shadow:0 2px 8px rgba(20,35,70,.14); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
 
       .project-grid.project-grid-compact { grid-template-columns:1fr; gap:.48rem; }
