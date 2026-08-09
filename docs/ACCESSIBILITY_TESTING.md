@@ -13,6 +13,9 @@ Accessible Caption Studio should hold itself to a high accessibility standard be
 - desktop and narrow/mobile layouts without document-level horizontal overflow
 - the upload area preserving and wrapping a very long filename
 - the new project search/filter/sort controls at desktop and mobile widths
+- 320 CSS-pixel and 640 CSS-pixel reflow proxies for 400% and 200% zoom
+- reduced-motion media emulation with effectively disabled UI transitions
+- forced-colors media emulation with primary controls remaining operable
 
 Run the browser suite after installing the development dependencies and Playwright Chromium:
 

@@ -211,6 +211,7 @@ class AnalysisJob(BaseModel):
     message: str = ""
     error_code: str | None = None
     error: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -239,6 +240,10 @@ class Project(BaseModel):
     speaker_engine: str = "legacy_wavlm"
     fusion_summary: FusionSummary = Field(default_factory=FusionSummary)
     transcription_quality: str = Field(default="accurate", pattern="^(fast|accurate)$")
+    transcription_language: str = Field(
+        default="en", pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
+    )
+    sdh_mode: Literal["off", "conservative", "full"] = "full"
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
     is_favorite: bool = False
 

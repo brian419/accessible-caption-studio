@@ -7,10 +7,11 @@ from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
-from .captions import to_srt, to_transcript_html, to_vtt
+from .captions import to_srt, to_transcript_html, to_ttml, to_vtt
 from .errors import StudioError
 from .media import inspect_media, require_tools
 from .models import CaptionCue, CaptionStyle, ExportArtifact, Project
+from .reports import accessibility_report_html
 from .storage import safe_filename
 
 try:
@@ -31,11 +32,19 @@ def export_text(project: Project, project_dir: Path, format_name: str) -> Export
         content, suffix = to_srt(display_cues), ".srt"
     elif format_name == "vtt":
         content, suffix = to_vtt(display_cues), ".vtt"
+    elif format_name == "ttml":
+        content, suffix = to_ttml(display_cues, project.transcription_language), ".ttml"
     elif format_name == "html":
         content, suffix = to_transcript_html(project.name, display_cues), ".html"
+    elif format_name == "report":
+        content, suffix = accessibility_report_html(project), " - accessibility report.html"
     else:
         raise ValueError("unsupported text export")
-    destination = exports / f"{base} - accessible captions{suffix}"
+    destination = (
+        exports / f"{base}{suffix}"
+        if format_name == "report"
+        else exports / f"{base} - accessible captions{suffix}"
+    )
     partial = destination.with_suffix(destination.suffix + ".partial")
     partial.write_text(content, encoding="utf-8")
     partial.replace(destination)

@@ -218,3 +218,12 @@ If a previous version stopped with `OMP: Error #15`, close its Terminal window a
 again after updating the project. Whisper now runs in a separate local process so its
 CTranslate2 runtime cannot collide with the PyTorch runtime used for speakers and sounds.
 Do not enable `KMP_DUPLICATE_LIB_OK`; that workaround can hide incorrect model behavior.
+
+
+## Cross-platform launch and releases
+
+macOS can continue to use `Start Accessible Caption Studio.command`. Linux users can run `start-accessible-caption-studio.sh`, and Windows users can run `Start Accessible Caption Studio.ps1`. See `docs/PLATFORM_SETUP.md` for FFmpeg and launcher details.
+
+Version tags matching `v*` run the release workflow, verify lint/tests, build the Python wheel and source distribution, create a portable source ZIP, generate SHA-256 checksums, and publish the files to a GitHub Release.
+
+The studio also supports multilingual Whisper selection, Off/Conservative/Full SDH modes, individual local model management, TTML/DFXP caption files, local Recent Project thumbnails, persistent retry inputs, and exportable accessibility authoring reports.

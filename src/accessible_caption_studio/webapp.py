@@ -18,12 +18,13 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .analyzer import LocalAnalyzer
+from .enhanced_analyzer import LocalAnalyzer
 from .captions import parse_caption_file
 from .errors import StudioError
 from .exports import export_captioned_mp4, export_text
 from .jobs import JobManager
 from .media import download_youtube, extract_audio, inspect_media
+from .roadmap import register_roadmap_routes
 from .models import (
     CaptionCue,
     CaptionStyle,
@@ -48,6 +49,10 @@ class YouTubeRequest(BaseModel):
     url: str
     cookie_browser: Literal["brave", "chrome", "edge", "firefox", "safari"] | None = None
     transcription_quality: Literal["fast", "accurate"] = "accurate"
+    transcription_language: str = Field(
+        default="en", pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
+    )
+    sdh_mode: Literal["off", "conservative", "full"] = "full"
 
 
 class ProjectUpdate(BaseModel):
@@ -55,6 +60,10 @@ class ProjectUpdate(BaseModel):
     cues: list[CaptionCue] | None = None
     speaker_names: dict[str, str] | None = None
     transcription_quality: Literal["fast", "accurate"] | None = None
+    transcription_language: str | None = Field(
+        default=None, pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$"
+    )
+    sdh_mode: Literal["off", "conservative", "full"] | None = None
     caption_style: CaptionStyle | None = None
 
 
@@ -177,6 +186,10 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     def script() -> Response:
         return Response(_asset_text("app.js"), media_type="text/javascript")
 
+    @app.get("/final-batch.js")
+    def final_batch_script() -> Response:
+        return Response(_asset_text("final_batch.js"), media_type="text/javascript")
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         return {
@@ -226,10 +239,16 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         media: Annotated[UploadFile, File()],
         captions: Annotated[UploadFile | None, File()] = None,
         transcription_quality: Annotated[Literal["fast", "accurate"], Form()] = "accurate",
+        transcription_language: Annotated[
+            str, Form(pattern=r"^(auto|[a-z]{2,3}(?:-[A-Z]{2})?)$")
+        ] = "en",
+        sdh_mode: Annotated[Literal["off", "conservative", "full"], Form()] = "full",
     ) -> dict[str, Any]:
         filename = safe_filename(media.filename or "media")
         project = store.create(Path(filename).stem)
         project.transcription_quality = transcription_quality
+        project.transcription_language = transcription_language
+        project.sdh_mode = sdh_mode
         project_dir = store.project_dir(project.id)
         destination = project_dir / filename
         try:
@@ -256,6 +275,8 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     def youtube_project(request: YouTubeRequest) -> dict[str, Any]:
         project = store.create("YouTube video")
         project.transcription_quality = request.transcription_quality
+        project.transcription_language = request.transcription_language
+        project.sdh_mode = request.sdh_mode
         store.save(project)
 
         def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
@@ -277,7 +298,18 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             store.save(current)
             _analysis_task(project.id, store, progress)
 
-        job = jobs.start(project.id, "youtube-analysis", target)
+        job = jobs.start(
+            project.id,
+            "youtube-analysis",
+            target,
+            parameters={
+                "url": request.url,
+                "cookie_browser": request.cookie_browser,
+                "transcription_quality": request.transcription_quality,
+                "transcription_language": request.transcription_language,
+                "sdh_mode": request.sdh_mode,
+            },
+        )
         project.latest_job_id = job.id
         store.save(project)
         return {"project": project, "job": job}
@@ -355,6 +387,11 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 and request.transcription_quality != project.transcription_quality
             )
             or (
+                request.transcription_language is not None
+                and request.transcription_language != project.transcription_language
+            )
+            or (request.sdh_mode is not None and request.sdh_mode != project.sdh_mode)
+            or (
                 request.caption_style is not None
                 and request.caption_style != project.caption_style
             )
@@ -372,6 +409,10 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             project.speaker_names = request.speaker_names
         if request.transcription_quality is not None:
             project.transcription_quality = request.transcription_quality
+        if request.transcription_language is not None:
+            project.transcription_language = request.transcription_language
+        if request.sdh_mode is not None:
+            project.sdh_mode = request.sdh_mode
         if request.caption_style is not None:
             project.caption_style = request.caption_style
         return store.save(project)
@@ -417,7 +458,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             if not audio.is_file():
                 progress("Preparing audio", 5, "Extracting the selected local audio track")
                 extract_audio(project_dir / current.media.stored_name, audio, progress)
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
+            analyzer = LocalAnalyzer(
+                store.models_dir,
+                current.transcription_quality,
+                current.transcription_language,
+                current.sdh_mode,
+            )
             channels, matched_speakers = analyzer.analyze_overlap(
                 audio, request.start, request.end, current.speakers, progress
             )
@@ -471,7 +517,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             }
             progress("Review separated voices", 95, "Two proposed speaker lines are ready")
 
-        job = jobs.start(project_id, "overlap-analysis", target)
+        job = jobs.start(
+            project_id,
+            "overlap-analysis",
+            target,
+            parameters={"start": request.start, "end": request.end},
+        )
         project.latest_job_id = job.id
         store.save(project)
         return job
@@ -498,7 +549,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                 10,
                 "Loading the local voice model; this can take a few minutes on Intel Macs",
             )
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
+            analyzer = LocalAnalyzer(
+                store.models_dir,
+                current.transcription_quality,
+                current.transcription_language,
+                current.sdh_mode,
+            )
             try:
                 speakers = analyzer.diarize(
                     audio,
@@ -592,7 +648,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             }
             progress("Review speaker changes", 95, "A non-destructive preview is ready")
 
-        return jobs.start(project_id, "speaker-reanalysis", target)
+        return jobs.start(
+            project_id,
+            "speaker-reanalysis",
+            target,
+            parameters={"expected_speaker_count": request.expected_speaker_count},
+        )
 
     @app.post("/api/projects/{project_id}/speaker-proposals/{job_id}/apply")
     def apply_speaker_proposal(project_id: str, job_id: str) -> Project:
@@ -663,7 +724,12 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
                     )
                 except (OSError, ValueError):
                     cuts = []
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
+            analyzer = LocalAnalyzer(
+                store.models_dir,
+                current.transcription_quality,
+                current.transcription_language,
+                current.sdh_mode,
+            )
             recovered_words, recovery_summary = analyzer.recover_transcription(
                 audio, current.words, progress, cuts
             )
@@ -845,7 +911,7 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
         project = _get_project(store, project_id)
         if not project.cues:
             raise HTTPException(status_code=400, detail="Add captions before exporting")
-        if format_name in {"srt", "vtt", "html"}:
+        if format_name in {"srt", "vtt", "ttml", "html", "report"}:
             artifact = export_text(project, store.project_dir(project_id), format_name)
             project.exports = [item for item in project.exports if item.format != format_name]
             project.exports.append(artifact)
@@ -912,6 +978,30 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return Response(status_code=204)
 
+    register_roadmap_routes(
+        app,
+        store,
+        jobs,
+        {
+            "analysis": lambda project_id, _job: analyze_project(project_id),
+            "mp4-export": lambda project_id, _job: create_export(project_id, "mp4"),
+            "transcript-repair": lambda project_id, _job: repair_transcript(project_id),
+            "speaker-reanalysis": lambda project_id, job: reanalyze_speakers(
+                project_id,
+                SpeakerReanalysisRequest(
+                    expected_speaker_count=job.parameters.get("expected_speaker_count")
+                ),
+            ),
+            "overlap-analysis": lambda project_id, job: analyze_overlap(
+                project_id,
+                OverlapRequest(
+                    start=float(job.parameters["start"]), end=float(job.parameters["end"])
+                ),
+            ),
+        },
+        _analysis_task,
+    )
+
     return app
 
 
@@ -940,7 +1030,12 @@ def _analysis_task(
     progress("Preparing audio", 10, "Extracting a private local analysis track")
     if not audio.is_file():
         extract_audio(source, audio, progress)
-    analyzer = LocalAnalyzer(store.models_dir, project.transcription_quality)
+    analyzer = LocalAnalyzer(
+        store.models_dir,
+        project.transcription_quality,
+        project.transcription_language,
+        project.sdh_mode,
+    )
     words, speakers, sounds, cues = analyzer.analyze(
         audio, progress, project.expected_speaker_count
     )

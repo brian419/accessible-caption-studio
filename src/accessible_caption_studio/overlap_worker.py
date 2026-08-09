@@ -17,6 +17,8 @@ def separate_and_transcribe(
     model_dir: Path,
     references_path: Path,
     output_path: Path,
+    transcription_language: str = "en",
+    transcription_quality: str = "accurate",
 ) -> None:
     import numpy as np
     import soundfile as sf
@@ -106,15 +108,29 @@ def separate_and_transcribe(
             channel_path = temporary_dir / f"speaker-{channel + 1}.wav"
             words_path = temporary_dir / f"speaker-{channel + 1}.json"
             sf.write(channel_path, sources[0, :, channel].detach().cpu().numpy(), sample_rate)
+            language = transcription_language.split("-", 1)[0].lower()
+            english = language == "en"
+            model_name = (
+                "small.en"
+                if english and transcription_quality == "fast"
+                else "distil-large-v3"
+                if english
+                else "small"
+                if transcription_quality == "fast"
+                else "large-v3"
+            )
+            command = [
+                sys.executable,
+                "-m",
+                "accessible_caption_studio.whisper_worker",
+                "--model",
+                model_name,
+            ]
+            if transcription_language != "auto":
+                command.extend(["--language", language])
+            command.extend([str(channel_path), str(whisper_dir), str(words_path)])
             process = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "accessible_caption_studio.whisper_worker",
-                    str(channel_path),
-                    str(whisper_dir),
-                    str(words_path),
-                ],
+                command,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -140,6 +156,8 @@ def main() -> None:
     parser.add_argument("model_dir", type=Path)
     parser.add_argument("references_path", type=Path)
     parser.add_argument("output_path", type=Path)
+    parser.add_argument("transcription_language", nargs="?", default="en")
+    parser.add_argument("transcription_quality", nargs="?", default="accurate")
     arguments = parser.parse_args()
     separate_and_transcribe(
         arguments.audio_path,
@@ -148,6 +166,8 @@ def main() -> None:
         arguments.model_dir,
         arguments.references_path,
         arguments.output_path,
+        arguments.transcription_language,
+        arguments.transcription_quality,
     )
 
 

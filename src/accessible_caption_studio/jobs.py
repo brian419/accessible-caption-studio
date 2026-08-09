@@ -6,6 +6,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 from .models import AnalysisJob, JobState, utc_now
 from .storage import ProjectStore
@@ -113,8 +114,11 @@ class JobManager:
         project_id: str,
         kind: str,
         target: Callable[[AnalysisJob, Callable[[str, int, str], None]], None],
+        parameters: dict[str, Any] | None = None,
     ) -> AnalysisJob:
-        job = AnalysisJob(project_id=project_id, kind=kind)
+        job = AnalysisJob(
+            project_id=project_id, kind=kind, parameters=dict(parameters or {})
+        )
         with self._lock:
             self._jobs[job.id] = job
             self.store.write_job(job)

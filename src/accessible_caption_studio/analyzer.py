@@ -425,6 +425,8 @@ class LocalAnalyzer:
                     str(self.model_dir),
                     str(references_path),
                     str(output_path),
+                    str(getattr(self, "transcription_language", "en")),
+                    str(getattr(self, "transcription_quality", "accurate")),
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

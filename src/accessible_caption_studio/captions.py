@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from uuid import uuid4
 
@@ -89,11 +90,67 @@ def parse_caption_text(content: str) -> list[CaptionCue]:
     return cues
 
 
-def parse_caption_file(path: Path) -> list[CaptionCue]:
-    if path.suffix.lower() not in {".srt", ".vtt"}:
-        raise ValueError("captions must be an SRT or VTT file")
+def _ttml_seconds(value: str) -> float:
+    cleaned = value.strip()
+    if cleaned.endswith("ms"):
+        return float(cleaned[:-2]) / 1000
+    if cleaned.endswith("s"):
+        return float(cleaned[:-1])
+    parts = cleaned.split(":")
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    raise ValueError(f"unsupported TTML time expression: {value}")
+
+
+def parse_ttml_text(content: str) -> list[CaptionCue]:
     try:
-        return parse_caption_text(path.read_text(encoding="utf-8"))
+        root = ET.fromstring(content.lstrip("\ufeff"))
+    except ET.ParseError as exc:
+        raise ValueError("TTML captions contain invalid XML") from exc
+    cues: list[CaptionCue] = []
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1].lower() != "p":
+            continue
+        begin = element.attrib.get("begin")
+        end = element.attrib.get("end")
+        duration = element.attrib.get("dur")
+        if not begin or (not end and not duration):
+            continue
+        try:
+            start = _ttml_seconds(begin)
+            finish = _ttml_seconds(end) if end else start + _ttml_seconds(duration or "0s")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("TTML captions use an unsupported time expression") from exc
+        text = " ".join("".join(element.itertext()).split()).strip()
+        if not text:
+            continue
+        speaker = element.attrib.get("data-speaker")
+        anonymous = _ANONYMOUS_SPEAKER.match(text)
+        if not speaker and anonymous:
+            speaker = anonymous.group(1)
+            text = anonymous.group(2).strip()
+        cues.append(
+            CaptionCue(
+                start=max(0, start),
+                end=max(start, finish),
+                text=text,
+                speaker=speaker,
+                source=SourceType.IMPORTED,
+            )
+        )
+    if not cues:
+        raise ValueError("no valid TTML caption cues were found")
+    return cues
+
+
+def parse_caption_file(path: Path) -> list[CaptionCue]:
+    suffix = path.suffix.lower()
+    if suffix not in {".srt", ".vtt", ".ttml", ".dfxp"}:
+        raise ValueError("captions must be an SRT, VTT, TTML, or DFXP file")
+    try:
+        content = path.read_text(encoding="utf-8")
+        return parse_ttml_text(content) if suffix in {".ttml", ".dfxp"} else parse_caption_text(content)
     except UnicodeDecodeError as exc:
         raise ValueError("captions must use UTF-8 encoding") from exc
 
@@ -151,6 +208,36 @@ def to_vtt(cues: list[CaptionCue]) -> str:
             f"{_timestamp(cue.start, '.')} --> {_timestamp(cue.end, '.')}\n{text}"
         )
     return "\n\n".join(blocks) + "\n"
+
+
+
+def _ttml_timestamp(value: float) -> str:
+    total_ms = max(0, round(value * 1000))
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
+
+
+def to_ttml(cues: list[CaptionCue], language: str = "en") -> str:
+    namespace = "http://www.w3.org/ns/ttml"
+    xml_namespace = "http://www.w3.org/XML/1998/namespace"
+    ET.register_namespace("", namespace)
+    root = ET.Element(f"{{{namespace}}}tt")
+    root.set(f"{{{xml_namespace}}}lang", "und" if language == "auto" else language)
+    body = ET.SubElement(root, f"{{{namespace}}}body")
+    division = ET.SubElement(body, f"{{{namespace}}}div")
+    for group in caption_groups(cues):
+        cue = group[0]
+        element = ET.SubElement(
+            division,
+            f"{{{namespace}}}p",
+            {"begin": _ttml_timestamp(cue.start), "end": _ttml_timestamp(cue.end)},
+        )
+        element.text = "\n".join(cue_display_text(item) for item in group)
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(
+        root, encoding="unicode"
+    ) + "\n"
 
 
 def to_transcript_html(title: str, cues: list[CaptionCue]) -> str:
