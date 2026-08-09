@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from .errors import StudioError
 from .models import MediaAsset
@@ -33,6 +34,52 @@ def require_tools() -> None:
         raise StudioError("missing_ffmpeg", "FFmpeg and FFprobe are required to process media.")
 
 
+def _ratio(value: Any) -> float:
+    if value in {None, "", "N/A", "0:1", "0/1"}:
+        return 1.0
+    text = str(value).strip()
+    for separator in (":", "/"):
+        if separator in text:
+            numerator, _, denominator = text.partition(separator)
+            try:
+                denominator_value = float(denominator)
+                if denominator_value:
+                    return float(numerator) / denominator_value
+            except ValueError:
+                return 1.0
+    try:
+        parsed = float(text)
+    except ValueError:
+        return 1.0
+    return parsed if parsed > 0 else 1.0
+
+
+def _rotation(video: dict[str, Any]) -> float:
+    for side_data in video.get("side_data_list", []) or []:
+        if side_data.get("rotation") is not None:
+            try:
+                return float(side_data["rotation"]) % 360
+            except (TypeError, ValueError):
+                pass
+    try:
+        return float((video.get("tags") or {}).get("rotate", 0)) % 360
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def displayed_video_dimensions(video: dict[str, Any] | None) -> tuple[int | None, int | None]:
+    """Return the square-pixel dimensions a player should display for a video stream."""
+    if not video or not video.get("width") or not video.get("height"):
+        return None, None
+    width = float(video["width"])
+    height = float(video["height"])
+    width *= _ratio(video.get("sample_aspect_ratio"))
+    rotation = _rotation(video)
+    if 45 <= rotation < 135 or 225 <= rotation < 315:
+        width, height = height, width
+    return max(1, round(width)), max(1, round(height))
+
+
 def inspect_media(path: Path, *, source_url: str | None = None) -> MediaAsset:
     require_tools()
     if path.suffix.lower() not in SUPPORTED_MEDIA:
@@ -56,13 +103,14 @@ def inspect_media(path: Path, *, source_url: str | None = None) -> MediaAsset:
     duration = float(payload.get("format", {}).get("duration") or audio.get("duration") or 0)
     if duration <= 0:
         raise StudioError("invalid_duration", "The media duration could not be determined.")
+    width, height = displayed_video_dimensions(video)
     return MediaAsset(
         filename=path.name,
         stored_name=path.name,
         content_type=None,
         duration=duration,
-        width=int(video["width"]) if video and video.get("width") else None,
-        height=int(video["height"]) if video and video.get("height") else None,
+        width=width,
+        height=height,
         has_video=video is not None,
         has_audio=True,
         source_url=source_url,
@@ -74,19 +122,19 @@ def extract_audio(source: Path, destination: Path, job_context: object | None = 
     require_tools()
     partial = destination.with_suffix(".partial.wav")
     command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(source),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-c:a",
-            "pcm_s16le",
-            str(partial),
-        ]
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
+        str(partial),
+    ]
     runner = getattr(job_context, "run_process", None)
     process = runner(command) if runner else subprocess.run(
         command, capture_output=True, text=True, check=False
