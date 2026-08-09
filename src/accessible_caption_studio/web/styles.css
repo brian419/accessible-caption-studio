@@ -1483,3 +1483,10 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
     transition: background-color 140ms ease, color 140ms ease;
   }
 }
+
+
+/* structured editor refinement */
+.project-search-field input {
+  padding-left: .75rem;
+  background-image: none;
+}
