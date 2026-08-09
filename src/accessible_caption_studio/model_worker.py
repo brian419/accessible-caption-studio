@@ -92,10 +92,20 @@ def install(model_id: str, root: Path) -> None:
     if model_id == "translation-m2m100":
         from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 
-        model_name = "facebook/m2m100_418M"
+        from .translation_worker import MODEL_NAME, MODEL_REVISION
+
         cache = str(root / "huggingface")
-        M2M100Tokenizer.from_pretrained(model_name, cache_dir=cache)
-        M2M100ForConditionalGeneration.from_pretrained(model_name, cache_dir=cache)
+        M2M100Tokenizer.from_pretrained(
+            MODEL_NAME,
+            revision=MODEL_REVISION,
+            cache_dir=cache,
+        )
+        M2M100ForConditionalGeneration.from_pretrained(
+            MODEL_NAME,
+            revision=MODEL_REVISION,
+            cache_dir=cache,
+            use_safetensors=True,
+        )
         return
     if model_id == "face-yunet-sface":
         from .visual_worker import (
