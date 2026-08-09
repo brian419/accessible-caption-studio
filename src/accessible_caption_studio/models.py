@@ -115,6 +115,9 @@ class CaptionCue(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
     sound_event_id: str | None = None
     overlap_group_id: str | None = None
+    position_override: Literal["top", "middle", "bottom"] | None = None
+    alignment_override: Literal["left", "center", "right"] | None = None
+    vertical_margin_percent_override: float | None = Field(default=None, ge=2, le=25)
 
     @field_validator("text")
     @classmethod
@@ -237,6 +240,7 @@ class Project(BaseModel):
     fusion_summary: FusionSummary = Field(default_factory=FusionSummary)
     transcription_quality: str = Field(default="accurate", pattern="^(fast|accurate)$")
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
+    is_favorite: bool = False
 
     @field_validator("speaker_names")
     @classmethod
