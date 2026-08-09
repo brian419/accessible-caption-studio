@@ -707,3 +707,16 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
 }
 .finding-fix:hover { background: var(--sky) !important; border-color: var(--blue) !important; }
 .style-finding { border-left-color: var(--blue); }
+
+/* major-iterations: failed job retry */
+.job-recovery-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .45rem;
+  grid-column: 1 / -1;
+  padding-top: .55rem;
+  border-top: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+}
+.job-recovery-actions .secondary,
+.job-recovery-actions .text-button { min-height: 34px; padding: .4rem .65rem; font-size: .76rem; }

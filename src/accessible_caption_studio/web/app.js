@@ -3075,3 +3075,177 @@ function toast(message, type = "info") {
     $("#resetCaptionStyle")?.addEventListener("click", scheduleAppearanceCheck);
   });
 })();
+
+// major-iterations: failed job retry
+(() => {
+  const baseUpdateJobPanel = updateJobPanel;
+  const retryableJobKinds = new Set(["analysis", "mp4-export", "transcript-repair", "speaker-reanalysis"]);
+
+  function installJobRecoveryActions() {
+    if ($("#jobRecoveryActions")) return;
+    const panel = $("#jobPanel");
+    if (!panel) return;
+    const actions = document.createElement("div");
+    actions.id = "jobRecoveryActions";
+    actions.className = "job-recovery-actions";
+    actions.hidden = true;
+
+    const retry = document.createElement("button");
+    retry.id = "retryJob";
+    retry.type = "button";
+    retry.className = "secondary";
+    retry.textContent = "Retry";
+    retry.addEventListener("click", retryFailedJob);
+
+    const dismiss = document.createElement("button");
+    dismiss.id = "dismissFailedJob";
+    dismiss.type = "button";
+    dismiss.className = "text-button";
+    dismiss.textContent = "Dismiss";
+    dismiss.addEventListener("click", dismissFailedJob);
+
+    actions.append(retry, dismiss);
+    panel.append(actions);
+  }
+
+  updateJobPanel = function updateJobPanelWithRecovery(job) {
+    baseUpdateJobPanel(job);
+    installJobRecoveryActions();
+    const actions = $("#jobRecoveryActions");
+    const retry = $("#retryJob");
+    const failed = job?.state === "failed";
+    actions.hidden = !failed;
+    if (!failed) return;
+    const retryable = retryableJobKinds.has(job.kind);
+    retry.hidden = !retryable;
+    if (retryable) {
+      retry.textContent = job.error_code === "job_interrupted" ? "Retry interrupted job" : "Retry";
+    }
+  };
+
+  pollJob = async function pollJobWithFailureRecovery() {
+    if (!state.activeJob || !state.activeJobProjectId) return;
+    const trackedJobId = state.activeJob.id;
+    const trackedProjectId = state.activeJobProjectId;
+    const trackedProjectName = state.activeJobProjectName;
+    try {
+      const job = await api(`/api/projects/${trackedProjectId}/jobs/${trackedJobId}`);
+      if (state.activeJob?.id !== trackedJobId || String(state.activeJobProjectId) !== String(trackedProjectId)) return;
+      state.activeJob = job;
+      updateJobPanel(job);
+      if (activeJobStates.has(job.state)) {
+        state.pollTimer = setTimeout(pollJob, 1100);
+        return;
+      }
+
+      const viewingTrackedProject = !workspaceView.hidden
+        && String(state.project?.id) === String(trackedProjectId);
+
+      if (job.state === "completed") {
+        const completedProject = await api(`/api/projects/${trackedProjectId}`);
+        if (viewingTrackedProject) {
+          state.project = completedProject;
+          renderProject();
+          if (job.kind === "mp4-export") {
+            const artifact = state.project.exports.find((item) => item.format === "mp4");
+            if (artifact) showExportComplete(artifact);
+          } else if (job.kind === "overlap-analysis" && job.result) {
+            showOverlapProposal(job.result);
+          } else if (job.kind === "speaker-reanalysis" && job.result) {
+            showSpeakerProposal(job.result, job.id);
+          } else if (job.kind === "transcript-repair" && job.result) {
+            showTranscriptProposal(job.result, job.id);
+          } else {
+            toast("Automatic captions are ready.");
+          }
+        } else {
+          if (!homeView.hidden) await loadProjects();
+          toast(`${trackedProjectName} finished processing.`);
+        }
+        clearFinishedJobSoon(job.id);
+        return;
+      }
+
+      if (job.state === "failed") {
+        const message = job.error || job.message || `${trackedProjectName} could not be processed.`;
+        toast(message, "error");
+        $("#jobPanel").hidden = false;
+        updateJobPanel(job);
+        if (!retryableJobKinds.has(job.kind)) {
+          $("#jobMessage").textContent = `${message} Restart this operation from its original project control.`;
+        }
+        syncActiveJobIndicators();
+        return;
+      }
+
+      if (job.state === "cancelled") {
+        toast(`Processing cancelled for ${trackedProjectName}. Saved work was not changed.`);
+        clearFinishedJobSoon(job.id);
+      }
+    } catch (error) {
+      toast(error.message, "error");
+    }
+  };
+
+  function clearFinishedJobSoon(jobId) {
+    setTimeout(() => {
+      if (state.activeJob?.id !== jobId) return;
+      clearTrackedJob();
+    }, 1800);
+  }
+
+  function clearTrackedJob() {
+    clearTimeout(state.pollTimer);
+    $("#jobPanel").hidden = true;
+    state.activeJob = null;
+    state.activeJobProjectId = null;
+    state.activeJobProjectName = "";
+    syncActiveJobIndicators();
+  }
+
+  function dismissFailedJob() {
+    if (state.activeJob?.state !== "failed") return;
+    clearTrackedJob();
+  }
+
+  async function retryFailedJob() {
+    if (state.activeJob?.state !== "failed" || !state.activeJobProjectId) return;
+    const failedJob = state.activeJob;
+    const projectId = state.activeJobProjectId;
+    const retryButton = $("#retryJob");
+    retryButton.disabled = true;
+    retryButton.textContent = "Starting…";
+    try {
+      const project = await api(`/api/projects/${projectId}`);
+      let job;
+      if (failedJob.kind === "analysis") {
+        job = await api(`/api/projects/${projectId}/analyze`, { method: "POST" });
+      } else if (failedJob.kind === "mp4-export") {
+        job = await api(`/api/projects/${projectId}/exports/mp4`, { method: "POST" });
+      } else if (failedJob.kind === "transcript-repair") {
+        job = await api(`/api/projects/${projectId}/repair-transcript`, { method: "POST" });
+      } else if (failedJob.kind === "speaker-reanalysis") {
+        job = await api(`/api/projects/${projectId}/reanalyze-speakers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expected_speaker_count: project.expected_speaker_count ?? null }),
+        });
+      } else {
+        toast("This operation needs its original inputs and must be restarted from the project.", "error");
+        return;
+      }
+      monitorJob(job, projectId, project.name);
+      toast(`Retry started for ${project.name}.`);
+    } catch (error) {
+      toast(error.message, "error");
+      updateJobPanel(failedJob);
+    } finally {
+      retryButton.disabled = false;
+      if (state.activeJob?.state === "failed") {
+        retryButton.textContent = state.activeJob.error_code === "job_interrupted" ? "Retry interrupted job" : "Retry";
+      }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", installJobRecoveryActions);
+})();
