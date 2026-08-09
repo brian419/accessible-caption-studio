@@ -25,7 +25,7 @@ ignored local `storage/` directory.
 
 ### Recent projects
 
-![Accessible Caption Studio recent projects screen](docs/recent-projects.webp)
+![Accessible Caption Studio recent projects screen](docs/recent-projects.png)
 
 ## What it does
 
