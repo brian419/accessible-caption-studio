@@ -691,3 +691,19 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
   .caption-search-status { text-align: left; }
   .system-readiness-list { grid-template-columns: 1fr; }
 }
+
+/* major-iterations: readability and finding fixes */
+.finding-fix {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 30px;
+  margin-top: .55rem;
+  padding: .34rem .55rem !important;
+  border: 1px solid color-mix(in srgb, var(--blue) 38%, var(--line)) !important;
+  border-radius: 7px;
+  color: var(--blue-dark) !important;
+  background: var(--control) !important;
+  font-size: .74rem !important;
+}
+.finding-fix:hover { background: var(--sky) !important; border-color: var(--blue) !important; }
+.style-finding { border-left-color: var(--blue); }
