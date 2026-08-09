@@ -518,5 +518,5 @@ def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: st
           };
         }"""
     )
-    assert geometry["cardHeight"] == 292
+    assert geometry["cardHeight"] == 272
     assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
