@@ -173,6 +173,40 @@ def test_api_switch_edit_validate_and_export_tracks_independently(tmp_path: Path
     ).status_code == 200
 
 
+def test_validate_endpoint_recomputes_translation_qa(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "storage")
+    store = app.state.store
+    project = store.create("Translation validation")
+    project.media = MediaAsset(
+        filename="audio.wav",
+        stored_name="audio.wav",
+        duration=5,
+        has_video=False,
+    )
+    project.cues = [CaptionCue(start=0, end=2, text="Alice paid 42 dollars")]
+    store.save(project)
+    project = store.get(project.id)
+    original = project.original_caption_track()
+    translated = CaptionTrack(
+        language="es",
+        kind="translation",
+        source_track_id=original.id,
+        source_language="en",
+        cues=[CaptionCue(start=0, end=2, text="Alicia pagó 24 dólares")],
+    )
+    project.caption_tracks.append(translated)
+    project.activate_caption_track(translated.id)
+    store.save(project)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/projects/{project.id}/validate")
+
+    assert response.status_code == 200
+    codes = {item["code"] for item in response.json()["findings"]}
+    assert "translation_number_changed" in codes
+    assert "translation_name_changed" in codes
+
+
 def test_translation_job_creates_track_without_real_model(monkeypatch, tmp_path: Path) -> None:
     app = create_app(tmp_path / "storage")
     store = app.state.store
