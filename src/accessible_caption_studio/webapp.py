@@ -18,13 +18,12 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .enhanced_analyzer import LocalAnalyzer
 from .captions import parse_caption_file
+from .enhanced_analyzer import LocalAnalyzer
 from .errors import StudioError
 from .exports import export_captioned_mp4, export_text
 from .jobs import JobManager
 from .media import download_youtube, extract_audio, inspect_media
-from .roadmap import register_roadmap_routes
 from .models import (
     CaptionCue,
     CaptionStyle,
@@ -38,6 +37,7 @@ from .models import (
     ValidationFinding,
     WordToken,
 )
+from .roadmap import register_roadmap_routes
 from .segmentation import segment_words_by_speaker, speaker_for_interval
 from .storage import ProjectStore, safe_filename
 from .validation import validate_cues

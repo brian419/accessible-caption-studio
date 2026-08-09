@@ -3,7 +3,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from accessible_caption_studio.captions import parse_ttml_text, to_ttml
-from accessible_caption_studio.migrations import CURRENT_PROJECT_SCHEMA_VERSION, migrate_project_payload
+from accessible_caption_studio.migrations import (
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    migrate_project_payload,
+)
 from accessible_caption_studio.model_management import ModelManager
 from accessible_caption_studio.models import AnalysisJob, CaptionCue, JobState, MediaAsset, Project
 from accessible_caption_studio.reports import accessibility_report_html
