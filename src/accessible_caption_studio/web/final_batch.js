@@ -86,7 +86,7 @@
       .project-view-select { min-width:118px; }
       .project-grid:not(.project-grid-compact) { grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:.9rem; align-items:start; }
       .project-grid:not(.project-grid-compact) .project-card { height:272px; min-height:272px; overflow:hidden; padding:0; display:flex; flex-direction:column; }
-      .project-grid:not(.project-grid-compact) .project-card.has-active-job { height:292px; min-height:292px; }
+      .project-grid:not(.project-grid-compact) .project-card.has-active-job { height:292px; min-height:292px; transition:transform .18s,border-color .18s,box-shadow .18s; }
       .project-grid:not(.project-grid-compact) .project-open { display:flex !important; flex:1 1 auto; flex-direction:column; align-items:stretch; width:100%; min-width:0; min-height:0; padding:0 !important; }
       .project-grid:not(.project-grid-compact) .project-thumbnail { order:-2; width:100%; height:112px; object-fit:cover; display:block; margin:0; border:0; border-bottom:1px solid var(--soft-line); border-radius:0; background:var(--wash); }
       .project-grid:not(.project-grid-compact) .project-open:has(.project-thumbnail) .project-type { display:none !important; }
