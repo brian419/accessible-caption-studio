@@ -22,12 +22,12 @@ $env:UV_PYTHON_INSTALL_DIR = Join-Path $PWD ".runtime\python"
 $env:UV_CACHE_DIR = Join-Path $PWD ".runtime\cache"
 $env:MPLCONFIGDIR = Join-Path $PWD "storage\temporary\matplotlib"
 
-if (-not (Test-Path ".setup-complete-v5") -or -not (Test-Path ".studio-venv\Scripts\python.exe")) {
+if (-not (Test-Path ".setup-complete-v6") -or -not (Test-Path ".studio-venv\Scripts\python.exe")) {
     Write-Host "Preparing Accessible Caption Studio. The first setup can take several minutes."
     & ".bootstrap\Scripts\python.exe" -m uv python install 3.11 --install-dir $env:UV_PYTHON_INSTALL_DIR --no-bin
     & ".bootstrap\Scripts\python.exe" -m uv venv --python 3.11 --clear .studio-venv
     & ".bootstrap\Scripts\python.exe" -m uv pip install --python ".studio-venv\Scripts\python.exe" -e ".[ml]"
-    New-Item -ItemType File -Path ".setup-complete-v5" -Force | Out-Null
+    New-Item -ItemType File -Path ".setup-complete-v6" -Force | Out-Null
 }
 
 & ".studio-venv\Scripts\accessible-caption-studio.exe" start
