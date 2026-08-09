@@ -498,7 +498,7 @@ def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: st
     _inject_project_card(page, "active-job-spacing-regression")
 
     card = page.locator("#active-job-spacing-regression")
-    card.evaluate(
+    geometry = card.evaluate(
         """card => {
           card.classList.add('has-active-job');
           const status = document.createElement('span');
@@ -507,17 +507,13 @@ def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: st
             <span class="project-job-spinner" aria-hidden="true"></span>
             <span class="project-job-status-text">Transcribing speech and singing · 25%</span>`;
           card.querySelector('.project-open').append(status);
-        }"""
-    )
 
-    geometry = card.evaluate(
-        """card => {
           const box = card.getBoundingClientRect();
-          const status = card.querySelector('.project-job-status').getBoundingClientRect();
+          const statusBox = status.getBoundingClientRect();
           const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
           return {
             cardHeight: Math.round(box.height),
-            statusBottom: status.bottom,
+            statusBottom: statusBox.bottom,
             actionsTop: actions.top,
           };
         }"""
