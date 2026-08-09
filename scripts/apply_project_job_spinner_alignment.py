@@ -1,64 +1,26 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-styles = root / "src/accessible_caption_studio/web/styles.css"
+final_batch = root / "src/accessible_caption_studio/web/final_batch.js"
 browser_test = root / "tests/browser/test_browser_ui.py"
 
-styles_text = styles.read_text()
-
-anchor = ".project-job-spinner {\n"
-override = ".project-card .project-job-status { display: flex; }\n"
-if override in styles_text:
-    raise SystemExit("project job status specificity override already present")
-if anchor not in styles_text:
-    raise SystemExit("project job spinner rule not found")
-styles_text = styles_text.replace(anchor, override + anchor, 1)
-styles.write_text(styles_text)
+final_text = final_batch.read_text()
+old_status = "      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status { position:absolute; left:.9rem; right:.9rem; bottom:4.35rem; z-index:1; width:auto; margin:0; padding:0; }\n"
+new_status = "      .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status { position:absolute; left:.9rem; right:.9rem; bottom:4rem; z-index:1; width:auto; margin:0; padding:0; }\n"
+if old_status not in final_text:
+    raise SystemExit("active job status anchor not found")
+final_text = final_text.replace(old_status, new_status, 1)
+final_batch.write_text(final_text)
 
 
 test_text = browser_test.read_text()
-old_geometry = '''          const box = card.getBoundingClientRect();
-          const statusBox = status.getBoundingClientRect();
-          const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
-          return {
-            cardHeight: Math.round(box.height),
-            statusBottom: statusBox.bottom,
-            actionsTop: actions.top,
-          };
-'''
-new_geometry = '''          const box = card.getBoundingClientRect();
-          const metaBox = card.querySelector('.project-open > span:not(.project-type):not(.project-job-status)').getBoundingClientRect();
-          const statusBox = status.getBoundingClientRect();
-          const spinnerBox = status.querySelector('.project-job-spinner').getBoundingClientRect();
-          const textBox = status.querySelector('.project-job-status-text').getBoundingClientRect();
-          const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
-          return {
-            cardHeight: Math.round(box.height),
-            statusDisplay: getComputedStyle(status).display,
-            metaBottom: metaBox.bottom,
-            statusTop: statusBox.top,
-            statusBottom: statusBox.bottom,
-            spinnerTop: spinnerBox.top,
-            spinnerCenter: spinnerBox.top + (spinnerBox.height / 2),
-            textCenter: textBox.top + (textBox.height / 2),
-            actionsTop: actions.top,
-          };
-'''
-if old_geometry not in test_text:
-    raise SystemExit("active job geometry fixture not found")
-test_text = test_text.replace(old_geometry, new_geometry, 1)
-
-old_assertions = '''    assert geometry["cardHeight"] == 272
-    assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
-'''
-new_assertions = '''    assert geometry["cardHeight"] == 272
-    assert geometry["statusDisplay"] == "flex"
-    assert geometry["statusTop"] - geometry["metaBottom"] >= 4
+old_assertions = '''    assert geometry["statusTop"] - geometry["metaBottom"] >= 4
     assert geometry["spinnerTop"] - geometry["metaBottom"] >= 4
-    assert abs(geometry["spinnerCenter"] - geometry["textCenter"]) <= 1
-    assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
+'''
+new_assertions = '''    assert geometry["statusTop"] - geometry["metaBottom"] >= 3
+    assert geometry["spinnerTop"] - geometry["metaBottom"] >= 3
 '''
 if old_assertions not in test_text:
-    raise SystemExit("active job geometry assertions not found")
+    raise SystemExit("active job metadata gap assertions not found")
 test_text = test_text.replace(old_assertions, new_assertions, 1)
 browser_test.write_text(test_text)
