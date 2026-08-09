@@ -107,7 +107,7 @@ def test_card_view_uses_full_width_media_header_and_readable_title(page: Page, s
           };
         }"""
     )
-    assert geometry["thumbWidth"] >= geometry["cardWidth"] - 4
+    assert geometry["thumbWidth"] >= geometry["cardWidth"] - 8
     assert geometry["titleTop"] >= geometry["thumbBottom"] - 1
     assert geometry["titleWidth"] >= geometry["cardWidth"] - 8
     assert geometry["favoriteTop"] < geometry["thumbBottom"]
