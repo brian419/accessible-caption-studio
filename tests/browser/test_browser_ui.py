@@ -368,7 +368,7 @@ def test_caption_localization_toolbar_sits_below_editor_tools_and_reflows(page: 
     page.set_viewport_size({"width": 1280, "height": 900})
     _open(page, studio_url)
 
-    source = page.evaluate("() => fetch('/final_batch.js').then((response) => response.text())")
+    source = page.evaluate("() => fetch('/final-batch.js').then((response) => response.text())")
     assert 'heading.after(bar);' in source
 
     page.locator("#homeView").evaluate("element => { element.hidden = true; }")
