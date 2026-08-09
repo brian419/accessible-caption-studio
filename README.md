@@ -13,7 +13,7 @@ ignored local `storage/` directory.
 
 ### Caption editor
 
-![Accessible Caption Studio caption editor](docs/caption-editor.webp)
+![Accessible Caption Studio caption editor](docs/caption-editor.png)
 
 ### Caption customization
 
