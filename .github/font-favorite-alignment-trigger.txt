@@ -1,1 +1,0 @@
-Apply font favorite alignment once.
