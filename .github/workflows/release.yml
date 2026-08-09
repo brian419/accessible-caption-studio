@@ -1,0 +1,60 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install media and packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install "build>=1.2,<2"
+
+      - name: Verify release tag matches package version
+        run: |
+          PACKAGE_VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [ "v${PACKAGE_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pyproject version v${PACKAGE_VERSION}."
+            exit 1
+          fi
+
+      - name: Verify source
+        run: |
+          ruff check . --ignore E501
+          node --check src/accessible_caption_studio/web/app.js
+          node --check src/accessible_caption_studio/web/final_batch.js
+          pytest -q --ignore=tests/browser
+
+      - name: Build Python packages
+        run: python -m build
+
+      - name: Build portable source archive and checksums
+        run: |
+          mkdir -p release
+          git archive --format=zip --output="release/accessible-caption-studio-${GITHUB_REF_NAME}-source.zip" HEAD
+          sha256sum dist/* release/* > SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* release/* SHA256SUMS.txt --generate-notes
