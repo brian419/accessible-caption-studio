@@ -1,0 +1,1 @@
+Run Ruff safe fixes once.
