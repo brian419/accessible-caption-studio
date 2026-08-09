@@ -14,6 +14,30 @@ def _open(page: Page, studio_url: str) -> None:
     expect(page.locator("#projectBrowserControls")).to_be_attached()
 
 
+def _inject_project_card(page: Page, card_id: str) -> None:
+    page.locator("#projectList").evaluate(
+        """(list, cardId) => {
+          const card = document.createElement('article');
+          card.id = cardId;
+          card.className = 'project-card';
+          card.innerHTML = `
+            <button class="project-open" type="button">
+              <img class="project-thumbnail" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
+              <span class="project-type">▶</span>
+              <strong>v24044gl0000d8bpaa7og65o2to74ma0-captioned-v24044gl0000d8bpaa7og65o2to74ma0</strong>
+              <span>23 captions · 2 hours ago</span>
+            </button>
+            <div class="button-row project-card-actions">
+              <button class="project-action" type="button">Duplicate</button>
+              <button class="project-action" type="button">Delete</button>
+            </div>
+            <button class="project-favorite" type="button" aria-label="Add project to favorites">☆</button>`;
+          list.append(card);
+        }""",
+        card_id,
+    )
+
+
 def test_home_desktop_controls_and_no_horizontal_overflow(page: Page, studio_url: str) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     _open(page, studio_url)
@@ -54,32 +78,70 @@ def test_long_upload_filename_wraps_without_losing_full_name(page: Page, studio_
     assert page.locator("#dropZone").evaluate("element => element.scrollWidth <= element.clientWidth + 1")
 
 
-def test_thumbnail_project_card_keeps_a_readable_text_column(page: Page, studio_url: str) -> None:
+def test_card_view_uses_full_width_media_header_and_readable_title(page: Page, studio_url: str) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     _open(page, studio_url)
+    page.get_by_label("Project view").select_option("default")
+    _inject_project_card(page, "card-layout-regression")
 
-    page.locator("#projectList").evaluate(
-        """list => {
-          const card = document.createElement('article');
-          card.id = 'thumbnail-layout-regression-card';
-          card.className = 'project-card';
-          card.innerHTML = `
-            <button class="project-open" type="button">
-              <img class="project-thumbnail" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
-              <span class="project-type">▶</span>
-              <strong>v24044gl0000d8bpaa7og65o2to74ma0-captioned-v24044gl0000d8bpaa7og65o2to74ma0</strong>
-              <span>23 captions · 2 hours ago</span>
-            </button>
-            <div class="project-card-actions"><button class="project-action" type="button">Duplicate</button></div>`;
-          list.append(card);
+    card = page.locator("#card-layout-regression")
+    thumbnail = card.locator(".project-thumbnail")
+    title = card.locator("strong")
+    favorite = card.locator(".project-favorite")
+    expect(card.locator(".project-type")).to_be_hidden()
+
+    geometry = card.evaluate(
+        """card => {
+          const thumb = card.querySelector('.project-thumbnail').getBoundingClientRect();
+          const title = card.querySelector('strong').getBoundingClientRect();
+          const favorite = card.querySelector('.project-favorite').getBoundingClientRect();
+          const box = card.getBoundingClientRect();
+          return {
+            cardWidth: box.width,
+            thumbWidth: thumb.width,
+            thumbBottom: thumb.bottom,
+            titleTop: title.top,
+            titleWidth: title.width,
+            favoriteTop: favorite.top,
+            favoriteBottom: favorite.bottom,
+          };
         }"""
     )
+    assert geometry["thumbWidth"] >= geometry["cardWidth"] - 4
+    assert geometry["titleTop"] >= geometry["thumbBottom"] - 1
+    assert geometry["titleWidth"] >= geometry["cardWidth"] - 8
+    assert geometry["favoriteTop"] < geometry["thumbBottom"]
+    assert geometry["favoriteBottom"] <= geometry["thumbBottom"]
+    assert card.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
+    expect(thumbnail).to_be_visible()
+    expect(title).to_be_visible()
+    expect(favorite).to_be_visible()
 
-    card = page.locator("#thumbnail-layout-regression-card")
-    type_icon = card.locator(".project-type")
-    title = card.locator("strong")
-    expect(type_icon).to_be_hidden()
-    assert title.evaluate("element => element.getBoundingClientRect().width") >= 120
+
+def test_compact_view_keeps_copy_actions_and_favorite_separate(page: Page, studio_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
+    _open(page, studio_url)
+    page.get_by_label("Project view").select_option("compact")
+    _inject_project_card(page, "compact-layout-regression")
+
+    card = page.locator("#compact-layout-regression")
+    geometry = card.evaluate(
+        """card => {
+          const title = card.querySelector('strong').getBoundingClientRect();
+          const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
+          const favorite = card.querySelector('.project-favorite').getBoundingClientRect();
+          const style = getComputedStyle(card.querySelector('.project-favorite'));
+          return {
+            titleWidth: title.width,
+            actionsRight: actions.right,
+            favoriteLeft: favorite.left,
+            favoritePosition: style.position,
+          };
+        }"""
+    )
+    assert geometry["titleWidth"] >= 300
+    assert geometry["actionsRight"] <= geometry["favoriteLeft"]
+    assert geometry["favoritePosition"] == "static"
     assert card.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
 
 
