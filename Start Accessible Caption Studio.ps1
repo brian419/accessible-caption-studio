@@ -1,17 +1,20 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
+$BootstrapCommand = $null
+$BootstrapArgs = @()
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    $Bootstrap = @("py", "-3")
+    $BootstrapCommand = "py"
+    $BootstrapArgs = @("-3")
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    $Bootstrap = @("python")
+    $BootstrapCommand = "python"
 } else {
     throw "Python 3 is required to prepare Accessible Caption Studio."
 }
 
 if (-not (Test-Path ".bootstrap\Scripts\python.exe")) {
     Write-Host "Preparing the private local installer..."
-    & $Bootstrap[0] @($Bootstrap[1..($Bootstrap.Length - 1)] | Where-Object { $_ }) -m venv .bootstrap
+    & $BootstrapCommand @BootstrapArgs -m venv .bootstrap
     & ".bootstrap\Scripts\python.exe" -m pip install --upgrade pip uv
 }
 
