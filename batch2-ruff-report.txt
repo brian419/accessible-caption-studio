@@ -1,0 +1,15 @@
+src/accessible_caption_studio/webapp.py:5:8: F401 [*] `re` imported but unused
+src/accessible_caption_studio/webapp.py:30:5: F401 [*] `.models.ExportArtifact` imported but unused
+src/accessible_caption_studio/webapp.py:32:5: F401 [*] `.models.JobState` imported but unused
+src/accessible_caption_studio/webapp.py:34:5: F401 [*] `.models.Severity` imported but unused
+src/accessible_caption_studio/webapp.py:35:5: F401 [*] `.models.SourceType` imported but unused
+src/accessible_caption_studio/webapp.py:37:5: F401 [*] `.models.ValidationFinding` imported but unused
+src/accessible_caption_studio/webapp.py:40:53: F401 [*] `.segmentation.speaker_for_interval` imported but unused
+src/accessible_caption_studio/webapp.py:421:83: F821 Undefined name `AnalysisJob`
+src/accessible_caption_studio/webapp.py:498:47: F821 Undefined name `AnalysisJob`
+src/accessible_caption_studio/webapp.py:572:50: F821 Undefined name `AnalysisJob`
+src/accessible_caption_studio/webapp.py:580:53: F821 Undefined name `AnalysisJob`
+src/accessible_caption_studio/webapp.py:643:80: F821 Undefined name `AnalysisJob`
+src/accessible_caption_studio/webapp.py:655:82: F821 Undefined name `AnalysisJob`
+Found 13 errors.
+[*] 7 fixable with the `--fix` option.
