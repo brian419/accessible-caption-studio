@@ -216,6 +216,7 @@ class AnalysisJob(BaseModel):
 class Project(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    schema_version: int = Field(default=1, ge=1)
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
     created_at: datetime = Field(default_factory=utc_now)
