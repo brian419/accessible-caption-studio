@@ -1,0 +1,35 @@
+name: Apply structured editor UI
+
+on:
+  push:
+    branches: [major-iterations]
+    paths:
+      - scripts/apply_structured_editor_ui.py
+      - .github/workflows/apply-structured-editor-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations
+
+      - name: Apply structured editor UI
+        run: python scripts/apply_structured_editor_ui.py
+
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/app.js src/accessible_caption_studio/web/styles.css
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git commit -m "Restructure caption editor interface"
+          git push origin HEAD:major-iterations
