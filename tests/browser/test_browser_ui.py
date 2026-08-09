@@ -191,6 +191,56 @@ def test_card_view_uses_uniform_heights_and_preserves_filename_extension(page: P
     expect(long_title).to_have_text(long_name)
 
 
+def test_favorite_controls_share_the_same_lucide_icon(page: Page, studio_url: str) -> None:
+    _open(page, studio_url)
+    page.locator("body").evaluate(
+        """body => {
+          const fixture = document.createElement('div');
+          fixture.id = 'favorite-icon-fixture';
+          fixture.innerHTML = `
+            <button class="project-favorite" aria-label="Favorite project" aria-pressed="false">☆</button>
+            <button class="caption-font-favorite" aria-label="Favorite font" aria-pressed="false">☆</button>`;
+          body.append(fixture);
+        }"""
+    )
+
+    project = page.locator("#favorite-icon-fixture .project-favorite")
+    font = page.locator("#favorite-icon-fixture .caption-font-favorite")
+    inactive = page.evaluate(
+        """() => {
+          const project = document.querySelector('#favorite-icon-fixture .project-favorite');
+          const font = document.querySelector('#favorite-icon-fixture .caption-font-favorite');
+          const projectIcon = getComputedStyle(project, '::before');
+          const fontIcon = getComputedStyle(font, '::before');
+          return {
+            projectMask: projectIcon.maskImage || projectIcon.webkitMaskImage,
+            fontMask: fontIcon.maskImage || fontIcon.webkitMaskImage,
+            projectFontSize: getComputedStyle(project).fontSize,
+            fontFontSize: getComputedStyle(font).fontSize,
+          };
+        }"""
+    )
+    assert inactive["projectMask"] == inactive["fontMask"]
+    assert "data:image/svg+xml;base64" in inactive["projectMask"]
+    assert inactive["projectFontSize"] == "0px"
+    assert inactive["fontFontSize"] == "0px"
+
+    project.evaluate("element => element.setAttribute('aria-pressed', 'true')")
+    font.evaluate("element => element.setAttribute('aria-pressed', 'true')")
+    active = page.evaluate(
+        """() => {
+          const project = getComputedStyle(document.querySelector('#favorite-icon-fixture .project-favorite'), '::before');
+          const font = getComputedStyle(document.querySelector('#favorite-icon-fixture .caption-font-favorite'), '::before');
+          return {
+            projectMask: project.maskImage || project.webkitMaskImage,
+            fontMask: font.maskImage || font.webkitMaskImage,
+          };
+        }"""
+    )
+    assert active["projectMask"] == active["fontMask"]
+    assert active["projectMask"] != inactive["projectMask"]
+
+
 def test_basic_accessibility_structure_and_settings_focus(page: Page, studio_url: str) -> None:
     _open(page, studio_url)
 
