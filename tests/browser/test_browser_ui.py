@@ -20,7 +20,7 @@ def test_home_desktop_controls_and_no_horizontal_overflow(page: Page, studio_url
 
     expect(page.get_by_role("heading", name="Turn a video into captions people can actually use.")).to_be_visible()
     expect(page.get_by_label("Search projects")).to_be_visible()
-    expect(page.get_by_label("Type")).to_be_visible()
+    expect(page.get_by_label("Media")).to_be_visible()
     expect(page.get_by_label("Sort")).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
 
