@@ -29,12 +29,16 @@ def _video(
     codec: str,
     *,
     frame_rate: int = 24,
-    frames: int = 2,
 ) -> None:
     encoders = _encoders()
     if codec not in encoders:
         pytest.skip(f"FFmpeg encoder {codec} is unavailable")
-    audio_codec = "libopus" if path.suffix.lower() == ".webm" else "aac"
+    if path.suffix.lower() == ".webm":
+        audio_codec = "libopus"
+    elif path.suffix.lower() == ".mov":
+        audio_codec = "pcm_s16le"
+    else:
+        audio_codec = "aac"
     if audio_codec not in encoders:
         pytest.skip(f"FFmpeg encoder {audio_codec} is unavailable")
     subprocess.run(
@@ -49,10 +53,8 @@ def _video(
             "lavfi",
             "-i",
             "anullsrc=r=16000:cl=mono",
-            "-frames:v",
-            str(frames),
             "-t",
-            "1",
+            "0.25",
             "-c:v",
             codec,
             "-pix_fmt",
@@ -73,7 +75,7 @@ def _video(
         ("portrait-30fps.mp4", "180x320", "libx264", 30, (180, 320)),
         ("low-resolution-60fps.mov", "96x54", "mpeg4", 60, (96, 54)),
         ("browser-source-25fps.webm", "160x90", "libvpx-vp9", 25, (160, 90)),
-        ("4k-single-frame-24fps.mp4", "3840x2160", "libx264", 24, (3840, 2160)),
+        ("4k-24fps.mp4", "3840x2160", "libx264", 24, (3840, 2160)),
     ],
 )
 def test_generated_video_corpus(
@@ -85,7 +87,7 @@ def test_generated_video_corpus(
     expected: tuple[int, int],
 ) -> None:
     path = tmp_path / filename
-    _video(path, size, codec, frame_rate=frame_rate, frames=1 if "4k" in filename else 2)
+    _video(path, size, codec, frame_rate=frame_rate)
     media = inspect_media(path)
     assert media.has_video is True
     assert media.has_audio is True
