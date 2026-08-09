@@ -61,3 +61,11 @@ def test_cache_cleanup_cannot_delete_projects(tmp_path: Path) -> None:
 
 def test_safe_names_strip_paths_and_markup() -> None:
     assert safe_filename("../../bad<script>.mp4") == "badscript.mp4"
+
+
+def test_safe_names_preserve_extension_when_long_names_are_truncated() -> None:
+    original = f"{'very-long-tiktok-captioned-' * 10}video.mp4"
+    sanitized = safe_filename(original)
+    assert len(sanitized) <= 150
+    assert sanitized.endswith(".mp4")
+    assert Path(sanitized).suffix == ".mp4"
