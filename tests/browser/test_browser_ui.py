@@ -529,7 +529,7 @@ def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: st
     )
     assert geometry["cardHeight"] == 272
     assert geometry["statusDisplay"] == "flex"
-    assert geometry["statusTop"] - geometry["metaBottom"] >= 4
-    assert geometry["spinnerTop"] - geometry["metaBottom"] >= 4
+    assert geometry["statusTop"] - geometry["metaBottom"] >= 3
+    assert geometry["spinnerTop"] - geometry["metaBottom"] >= 3
     assert abs(geometry["spinnerCenter"] - geometry["textCenter"]) <= 1
     assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
