@@ -1,0 +1,1 @@
+Apply the Recent Projects thumbnail layout and persistent view-mode fix once.
