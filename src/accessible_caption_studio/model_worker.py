@@ -105,6 +105,7 @@ def install(model_id: str, root: Path) -> None:
             revision=MODEL_REVISION,
             cache_dir=cache,
             use_safetensors=True,
+            low_cpu_mem_usage=False,
         )
         return
     if model_id == "face-yunet-sface":
