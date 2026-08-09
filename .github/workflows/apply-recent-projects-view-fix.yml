@@ -1,0 +1,39 @@
+name: Apply recent projects view fix
+
+on:
+  push:
+    branches:
+      - major-iterations-batch-2
+    paths:
+      - scripts/apply_recent_projects_view_fix.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations-batch-2
+          fetch-depth: 0
+
+      - name: Apply Recent Projects UI fix
+        run: |
+          python scripts/apply_recent_projects_view_fix.py
+          node --check src/accessible_caption_studio/web/final_batch.js
+          python -m compileall -q tests/browser
+
+      - name: Commit product changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/final_batch.js tests/browser/test_browser_ui.py
+          if git diff --cached --quiet; then
+            echo "No product changes to commit."
+            exit 0
+          fi
+          git commit -m "Fix Recent Projects thumbnail layout and add view modes"
+          git push origin HEAD:major-iterations-batch-2
