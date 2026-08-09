@@ -1,1 +1,0 @@
-verify active job spinner alignment pass 3
