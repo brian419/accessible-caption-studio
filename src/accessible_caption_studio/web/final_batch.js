@@ -139,8 +139,8 @@
       .caption-track-field { display:grid; gap:.38rem; min-width:0; font-size:.72rem; font-weight:800; color:var(--muted); }
       .caption-track-control-label { color:var(--muted); font-size:.72rem; font-weight:800; }
       .caption-track-field select, .caption-track-add select { width:100%; min-width:0; min-height:38px; border:1px solid #aeb9ce; border-radius:9px; padding:.45rem .6rem; color:var(--ink); background:var(--control); }
-      .caption-track-status { display:inline-flex; align-items:center; align-self:end; justify-self:start; min-height:34px; padding:.35rem .65rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
-      .caption-track-status.needs-update { color:#8a4b08; border-color:#e7c089; background:#fff7e8; }
+      .caption-track-status { display:inline-flex; align-items:center; align-self:end; justify-self:start; min-height:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--muted); font-size:.7rem; font-weight:750; line-height:1.35; white-space:normal; }
+      .caption-track-status.needs-update { color:var(--muted); border-color:transparent; background:transparent; }
       .caption-track-add { min-width:0; display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:.55rem; align-items:end; }
       .caption-track-actions { display:grid; grid-template-columns:repeat(3,max-content); align-items:center; justify-content:start; gap:.45rem .5rem; min-width:0; }
       .caption-track-actions[hidden] { display:none !important; }
@@ -191,8 +191,8 @@
       .caption-localization-dialog .caption-track-field { display:grid; gap:.38rem; min-width:0; color:var(--muted); font-size:.72rem; font-weight:800; }
       .caption-localization-dialog .caption-track-field select,
       .caption-localization-dialog .caption-track-add select { width:100%; min-width:0; min-height:40px; border:1px solid #aeb9ce; border-radius:9px; padding:.48rem .65rem; color:var(--ink); background:var(--control); }
-      .caption-localization-dialog .caption-track-status { display:inline-flex; align-items:center; justify-self:start; min-height:34px; padding:.35rem .65rem; border-radius:999px; background:var(--paper); border:1px solid var(--soft-line); color:var(--muted); font-size:.7rem; font-weight:800; white-space:nowrap; }
-      .caption-localization-dialog .caption-track-status.needs-update { color:#8a4b08; border-color:#e7c089; background:#fff7e8; }
+      .caption-localization-dialog .caption-track-status { display:inline-flex; align-items:center; justify-self:start; min-height:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--muted); font-size:.7rem; font-weight:750; line-height:1.35; white-space:normal; }
+      .caption-localization-dialog .caption-track-status.needs-update { color:var(--muted); border-color:transparent; background:transparent; }
       .caption-localization-dialog .caption-track-add { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.55rem; align-items:end; }
       .caption-localization-dialog .caption-track-actions { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
       .caption-localization-dialog .caption-track-actions button { min-height:36px; }
