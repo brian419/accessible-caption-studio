@@ -397,7 +397,7 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
     dialog = page.locator("#captionLocalizationDialog")
     expect(dialog).to_be_visible()
     expect(dialog.get_by_role("heading", name="Languages & translations")).to_be_visible()
-    expect(dialog.get_by_label("Caption track")).to_have_value("track-original")
+    expect(dialog.get_by_label("Caption track", exact=True)).to_have_value("track-original")
     expect(dialog.get_by_label("Translated caption language")).to_be_visible()
     assert page.locator("#captionTrackBar").count() == 0
     after = page.locator(".column-labels").evaluate("element => Math.round(element.getBoundingClientRect().top)")
