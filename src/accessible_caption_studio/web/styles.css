@@ -1789,3 +1789,27 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
     min-height: 284px !important;
   }
 }
+
+
+/* Active project job card spacing selector correction */
+.project-card.has-active-job {
+  height: 292px !important;
+  min-height: 292px !important;
+}
+
+.project-grid-compact .project-card.has-active-job {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+@media (max-width: 560px) {
+  .project-card.has-active-job {
+    height: 284px !important;
+    min-height: 284px !important;
+  }
+
+  .project-grid-compact .project-card.has-active-job {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+}
