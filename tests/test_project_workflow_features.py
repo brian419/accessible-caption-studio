@@ -67,7 +67,7 @@ def test_schema_v1_migrates_favorite_and_cue_placement_defaults() -> None:
     migrated, changed = migrate_project_payload(payload)
 
     assert changed is True
-    assert migrated["schema_version"] == CURRENT_PROJECT_SCHEMA_VERSION == 3
+    assert migrated["schema_version"] == CURRENT_PROJECT_SCHEMA_VERSION == 4
     assert migrated["is_favorite"] is False
     assert migrated["transcription_language"] == "en"
     assert migrated["sdh_mode"] == "full"
