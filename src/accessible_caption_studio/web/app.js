@@ -3556,14 +3556,60 @@ function toast(message, type = "info") {
     }
   }
 
-  function downloadProjectBackup() {
+  function backupDownloadFilename(disposition, projectName) {
+    const value = String(disposition || "");
+    const encoded = value.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encoded?.[1]) {
+      try { return decodeURIComponent(encoded[1].replace(/^"|"$/g, "")); } catch (_) { /* Use the plain filename or fallback below. */ }
+    }
+    const plain = value.match(/filename="?([^";]+)"?/i);
+    if (plain?.[1]) return plain[1].trim();
+    const safeProjectName = String(projectName || "Accessible Caption Studio project")
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .trim() || "Accessible Caption Studio project";
+    return `${safeProjectName} - backup.acstudio.zip`;
+  }
+
+  async function downloadProjectBackup() {
     if (!state.project) return;
-    const link = document.createElement("a");
-    link.href = `/api/projects/${state.project.id}/backup`;
-    link.download = "";
-    document.body.append(link);
-    link.click();
-    link.remove();
+    const button = $("#backupProjectButton");
+    if (button?.disabled) return;
+    if (button) {
+      button.disabled = true;
+      button.classList.add("is-loading");
+      button.setAttribute("aria-busy", "true");
+      button.textContent = "Preparing backup…";
+    }
+    try {
+      const response = await fetch(`/api/projects/${state.project.id}/backup`);
+      if (!response.ok) {
+        let message = "The project backup could not be prepared.";
+        try {
+          const payload = await response.json();
+          message = payload?.detail?.message || payload?.detail || message;
+        } catch (_) { /* Keep the friendly fallback. */ }
+        throw new Error(String(message));
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = backupDownloadFilename(response.headers.get("content-disposition"), state.project.name);
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      toast("Backup ready. Download starting.");
+    } catch (error) {
+      toast(error?.message || "The project backup could not be prepared.", "error");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+        button.removeAttribute("aria-busy");
+        button.textContent = "Backup";
+      }
+    }
   }
 
   function installBatch2EditorTools() {

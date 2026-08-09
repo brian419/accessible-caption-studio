@@ -115,6 +115,18 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
 .danger-secondary { color: var(--danger); background: var(--control); border: 1px solid #e0aaa4; }
 .icon-button, .text-button { color: var(--blue-dark); background: transparent; border: 0; }
 .text-button { padding-inline: .25rem; }
+#backupProjectButton.is-loading { display: inline-flex; align-items: center; gap: .42rem; }
+#backupProjectButton.is-loading::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border: 2px solid color-mix(in srgb, var(--blue) 22%, transparent);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: backup-button-spin .8s linear infinite;
+}
+@keyframes backup-button-spin { to { transform: rotate(360deg); } }
 .wide { width: 100%; }
 
 .recent { margin-top: 5rem; }
@@ -150,6 +162,7 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
   gap: .48rem;
   width: fit-content;
   margin-top: .72rem;
+  padding-bottom: .3rem;
   color: var(--blue-dark) !important;
   font-size: .78rem !important;
   font-weight: 800;
