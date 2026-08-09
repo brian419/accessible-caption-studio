@@ -1746,3 +1746,10 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
   justify-self: center !important;
   margin: 0 !important;
 }
+
+
+
+/* Font favorite optical centering */
+.caption-font-option .caption-font-favorite {
+  transform: translateY(-1px);
+}
