@@ -24,6 +24,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/accessible_caption_studio/web/styles.css tests/browser/test_browser_ui.py
-          git commit -m "Align active job spinner with status text"
+          git add src/accessible_caption_studio/web/final_batch.js tests/browser/test_browser_ui.py
+          git commit -m "Separate active job status from project metadata"
           git push origin HEAD:small-fixes-2026-08-09
