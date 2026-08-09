@@ -167,6 +167,7 @@ input[type="url"], input[type="password"], .project-title { width: 100%; border:
   font-size: .78rem !important;
   font-weight: 800;
 }
+.project-card .project-job-status { display: flex; }
 .project-job-spinner {
   display: inline-block !important;
   width: 15px;

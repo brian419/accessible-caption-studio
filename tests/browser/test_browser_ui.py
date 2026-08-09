@@ -509,14 +509,27 @@ def test_active_job_card_reserves_space_above_actions(page: Page, studio_url: st
           card.querySelector('.project-open').append(status);
 
           const box = card.getBoundingClientRect();
+          const metaBox = card.querySelector('.project-open > span:not(.project-type):not(.project-job-status)').getBoundingClientRect();
           const statusBox = status.getBoundingClientRect();
+          const spinnerBox = status.querySelector('.project-job-spinner').getBoundingClientRect();
+          const textBox = status.querySelector('.project-job-status-text').getBoundingClientRect();
           const actions = card.querySelector('.project-card-actions').getBoundingClientRect();
           return {
             cardHeight: Math.round(box.height),
+            statusDisplay: getComputedStyle(status).display,
+            metaBottom: metaBox.bottom,
+            statusTop: statusBox.top,
             statusBottom: statusBox.bottom,
+            spinnerTop: spinnerBox.top,
+            spinnerCenter: spinnerBox.top + (spinnerBox.height / 2),
+            textCenter: textBox.top + (textBox.height / 2),
             actionsTop: actions.top,
           };
         }"""
     )
     assert geometry["cardHeight"] == 272
+    assert geometry["statusDisplay"] == "flex"
+    assert geometry["statusTop"] - geometry["metaBottom"] >= 4
+    assert geometry["spinnerTop"] - geometry["metaBottom"] >= 4
+    assert abs(geometry["spinnerCenter"] - geometry["textCenter"]) <= 1
     assert geometry["actionsTop"] - geometry["statusBottom"] >= 8
