@@ -6,7 +6,7 @@ import pytest
 
 from accessible_caption_studio.exports import export_captioned_mp4, export_text
 from accessible_caption_studio.media import extract_audio, inspect_media
-from accessible_caption_studio.models import CaptionCue
+from accessible_caption_studio.models import CaptionCue, CaptionStyle
 from accessible_caption_studio.storage import ProjectStore
 
 pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is not installed")
@@ -57,10 +57,11 @@ def test_inspection_audio_extraction_and_text_exports(tmp_path: Path) -> None:
 
 def test_captioned_mp4_export(tmp_path: Path) -> None:
     filters = subprocess.run(["ffmpeg", "-filters"], capture_output=True, text=True).stdout
-    if " subtitles " not in filters:
-        pytest.skip("FFmpeg libass subtitle filter is unavailable")
+    if " drawtext " not in filters:
+        pytest.skip("FFmpeg drawtext filter is unavailable")
     store = ProjectStore(tmp_path / "storage")
     project = store.create("Captioned sample")
+    project.caption_style = CaptionStyle(font_family="DejaVu Sans", font_style="Bold")
     source = store.project_dir(project.id) / "sample.mp4"
     make_video(source)
     project.media = inspect_media(source)
