@@ -6,6 +6,7 @@ on:
       - major-iterations-batch-2
     paths:
       - scripts/apply_recent_projects_view_fix.py
+      - .github/recent-projects-view-trigger.txt
 
 permissions:
   contents: write
