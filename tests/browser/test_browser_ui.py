@@ -446,4 +446,9 @@ def test_caption_localization_toolbar_sits_below_editor_tools_and_reflows(page: 
     )
     assert mobile["overflow"] <= 1
     assert mobile["createTop"] >= mobile["currentBottom"]
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+    assert bar.locator(".caption-track-controls").evaluate(
+        "element => element.scrollWidth <= element.clientWidth + 1"
+    )
+    assert bar.locator(".caption-track-actions").evaluate(
+        "element => element.scrollWidth <= element.clientWidth + 1"
+    )
