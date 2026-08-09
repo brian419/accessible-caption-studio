@@ -2470,35 +2470,38 @@ function toast(message, type = "info") {
     if ($("#projectBrowserControls")) return;
     const container = document.querySelector(".project-list-container");
     if (!container) return;
+
     const controls = document.createElement("div");
     controls.id = "projectBrowserControls";
     controls.className = "project-browser-controls";
+    controls.setAttribute("aria-label", "Project search and filters");
     controls.innerHTML = `
-      <div class="project-search-cluster">
-        <label class="project-search-field" for="projectSearch">
-          <span>Search projects</span>
-          <input id="projectSearch" type="search" placeholder="Search by project name" autocomplete="off">
-        </label>
-        <span id="projectFilterCount" class="project-filter-count" role="status"></span>
-      </div>
-      <div class="project-refine-controls" role="group" aria-label="Project view options">
-        <label for="projectTypeFilter"><span>Media</span>
-          <select id="projectTypeFilter">
+      <label class="project-search-field" for="projectSearch">
+        <span class="sr-only">Search projects</span>
+        <input id="projectSearch" type="search" placeholder="Search projects" autocomplete="off">
+      </label>
+      <div class="project-browser-actions">
+        <label class="project-compact-select" for="projectTypeFilter">
+          <span class="sr-only">Media</span>
+          <select id="projectTypeFilter" aria-label="Media">
             <option value="all">All media</option>
             <option value="video">Video</option>
             <option value="audio">Audio only</option>
           </select>
         </label>
-        <label for="projectSort"><span>Sort</span>
-          <select id="projectSort">
+        <label class="project-compact-select" for="projectSort">
+          <span class="sr-only">Sort</span>
+          <select id="projectSort" aria-label="Sort">
             <option value="recent">Most recent</option>
             <option value="oldest">Oldest updated</option>
             <option value="name">Name A-Z</option>
             <option value="captions">Most captions</option>
           </select>
         </label>
+        <span id="projectFilterCount" class="project-filter-count" role="status"></span>
       </div>`;
     container.before(controls);
+
     const noResults = document.createElement("p");
     noResults.id = "projectFilterEmpty";
     noResults.className = "empty-state project-filter-empty";
@@ -2521,55 +2524,110 @@ function toast(message, type = "info") {
   }
 
   function installCaptionTools() {
-    if ($("#captionProductivityTools")) return;
+    if ($("#captionCommandBar")) return;
     const editorHeading = document.querySelector(".editor-heading");
     if (!editorHeading) return;
 
+    const addButton = $("#addCueButton");
+    const followButton = $("#followPlaybackButton");
+    const undoButton = $("#undoButton");
+    const improveButton = $("#improveTranscriptButton");
+    const speakersButton = $("#redetectSpeakersButton");
+    const renameButton = $("#renameSpeakersButton");
+    const oldTools = editorHeading.querySelector(".editor-tools");
+
     const redoButton = document.createElement("button");
     redoButton.id = "redoButton";
-    redoButton.className = "secondary editor-action";
+    redoButton.className = "secondary editor-action editor-command-button";
     redoButton.type = "button";
     redoButton.textContent = "Redo";
     redoButton.disabled = true;
-    $("#undoButton").after(redoButton);
 
-    const titleRow = editorHeading.querySelector(".editor-title-row");
-    const addButton = $("#addCueButton");
-    const titleActions = document.createElement("div");
-    titleActions.className = "editor-title-actions";
+    const findButton = document.createElement("button");
+    findButton.id = "captionFindToggle";
+    findButton.className = "secondary editor-action editor-command-button";
+    findButton.type = "button";
+    findButton.setAttribute("aria-expanded", "false");
+    findButton.setAttribute("aria-controls", "captionProductivityTools");
+    findButton.textContent = "Find";
+
     const reviewButton = document.createElement("button");
     reviewButton.id = "lowConfidenceReview";
-    reviewButton.className = "secondary editor-review-action";
+    reviewButton.className = "secondary editor-action editor-command-button editor-review-action";
     reviewButton.type = "button";
     reviewButton.textContent = "Review uncertain";
-    titleActions.append(reviewButton);
-    if (addButton) titleActions.append(addButton);
-    titleRow?.append(titleActions);
 
-    const tools = document.createElement("details");
-    tools.id = "captionProductivityTools";
-    tools.className = "caption-productivity-tools";
-    tools.innerHTML = `
-      <summary>
-        <span class="caption-find-summary-copy">
-          <strong>Find & replace captions</strong>
-          <small>Search the whole transcript without crowding the timeline.</small>
-        </span>
+    [followButton, undoButton].forEach((button) => button?.classList.add("editor-command-button"));
+
+    const commandBar = document.createElement("div");
+    commandBar.id = "captionCommandBar";
+    commandBar.className = "editor-command-bar";
+    commandBar.setAttribute("role", "toolbar");
+    commandBar.setAttribute("aria-label", "Caption editor tools");
+
+    const primary = document.createElement("div");
+    primary.className = "editor-command-primary";
+    [followButton, undoButton, redoButton, findButton, reviewButton].forEach((button) => {
+      if (button) primary.append(button);
+    });
+
+    const secondary = document.createElement("div");
+    secondary.className = "editor-command-secondary";
+
+    const more = document.createElement("details");
+    more.className = "editor-more-menu";
+    more.innerHTML = `
+      <summary class="editor-more-trigger" aria-label="More caption tools">More tools</summary>
+      <div class="editor-more-popover" role="group" aria-label="More caption tools"></div>`;
+    const popover = more.querySelector(".editor-more-popover");
+    [improveButton, speakersButton, renameButton].forEach((button) => {
+      if (!button) return;
+      button.classList.add("editor-more-action");
+      popover.append(button);
+    });
+    secondary.append(more);
+    if (addButton) secondary.append(addButton);
+    commandBar.append(primary, secondary);
+
+    const findPanel = document.createElement("div");
+    findPanel.id = "captionProductivityTools";
+    findPanel.className = "caption-productivity-tools caption-find-panel";
+    findPanel.hidden = true;
+    findPanel.innerHTML = `
+      <div class="caption-find-search">
+        <label for="captionSearch"><span class="sr-only">Find caption text</span><input id="captionSearch" type="search" placeholder="Find in captions" autocomplete="off"></label>
         <span id="captionSearchStatus" class="caption-search-status" role="status"></span>
-      </summary>
-      <div class="caption-find-body">
-        <div class="caption-search-row">
-          <label for="captionSearch"><span>Find caption text</span><input id="captionSearch" type="search" placeholder="Find text in captions" autocomplete="off"></label>
-          <button id="captionFindNext" class="secondary editor-action" type="button">Find next</button>
-        </div>
-        <div class="caption-replace-row">
-          <label for="captionReplace"><span>Replace with</span><input id="captionReplace" type="text" placeholder="Replacement text"></label>
-          <button id="captionReplaceCurrent" class="secondary editor-action" type="button">Replace</button>
-          <button id="captionReplaceAll" class="secondary editor-action" type="button">Replace all</button>
-        </div>
+        <button id="captionFindNext" class="secondary editor-action" type="button">Next</button>
+      </div>
+      <div class="caption-find-replace">
+        <label for="captionReplace"><span class="sr-only">Replace with</span><input id="captionReplace" type="text" placeholder="Replace with"></label>
+        <button id="captionReplaceCurrent" class="secondary editor-action" type="button">Replace</button>
+        <button id="captionReplaceAll" class="secondary editor-action" type="button">Replace all</button>
       </div>`;
-    editorHeading.append(tools);
 
+    oldTools?.remove();
+    editorHeading.append(commandBar, findPanel);
+
+    const closeMoreMenu = () => { more.open = false; };
+    more.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMoreMenu();
+        more.querySelector("summary")?.focus();
+      }
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (more.open && !more.contains(event.target)) closeMoreMenu();
+    });
+    popover.querySelectorAll("button").forEach((button) => button.addEventListener("click", closeMoreMenu));
+
+    findButton.addEventListener("click", () => {
+      const opening = findPanel.hidden;
+      findPanel.hidden = !opening;
+      findButton.setAttribute("aria-expanded", String(opening));
+      findButton.setAttribute("aria-pressed", String(opening));
+      if (opening) $("#captionSearch")?.focus();
+    });
     $("#captionSearch").addEventListener("input", () => {
       productivity.captionSearchIndex = -1;
       productivity.captionSearchCueId = null;
@@ -2579,6 +2637,12 @@ function toast(message, type = "info") {
       if (event.key === "Enter") {
         event.preventDefault();
         findNextCaption();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        findPanel.hidden = true;
+        findButton.setAttribute("aria-expanded", "false");
+        findButton.setAttribute("aria-pressed", "false");
+        findButton.focus();
       }
     });
     $("#captionFindNext").addEventListener("click", findNextCaption);
@@ -2604,36 +2668,46 @@ function toast(message, type = "info") {
     stage.append(guides);
 
     const help = document.querySelector(".playback-help");
-    if (help) {
-      const extra = document.createElement("div");
-      extra.className = "playback-extra-tools";
+    if (!help) return;
 
-      const button = document.createElement("button");
-      button.id = "safeAreaToggle";
-      button.className = "text-button safe-area-toggle";
-      button.type = "button";
-      button.setAttribute("aria-pressed", "false");
-      button.textContent = "Safe areas";
-      button.addEventListener("click", () => {
-        const enabled = guides.hidden;
-        guides.hidden = !enabled;
-        button.setAttribute("aria-pressed", String(enabled));
-        button.textContent = enabled ? "Hide safe areas" : "Safe areas";
-      });
+    const utility = document.createElement("div");
+    utility.className = "preview-utility-tools";
 
-      const shortcuts = document.createElement("details");
-      shortcuts.className = "shortcut-disclosure";
-      shortcuts.innerHTML = `
-        <summary>Timing shortcuts</summary>
-        <div class="timing-shortcut-grid">
-          <span><span><kbd>Shift</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.1s</small></span>
-          <span><span><kbd>Option/Alt</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.5s</small></span>
-          <span><span><kbd>[</kbd> / <kbd>]</kbd></span><small>Set cue start / end</small></span>
-          <span><span><kbd>P</kbd> / <kbd>N</kbd></span><small>Previous / next caption</small></span>
-        </div>`;
-      extra.append(button, shortcuts);
-      help.append(extra);
-    }
+    const safeButton = document.createElement("button");
+    safeButton.id = "safeAreaToggle";
+    safeButton.className = "text-button safe-area-toggle";
+    safeButton.type = "button";
+    safeButton.setAttribute("aria-pressed", "false");
+    safeButton.textContent = "Safe areas";
+    safeButton.addEventListener("click", () => {
+      const enabled = guides.hidden;
+      guides.hidden = !enabled;
+      safeButton.setAttribute("aria-pressed", String(enabled));
+    });
+
+    const shortcuts = document.createElement("details");
+    shortcuts.className = "shortcut-disclosure";
+    shortcuts.innerHTML = `
+      <summary>Shortcuts</summary>
+      <div class="timing-shortcut-grid">
+        <span><span><kbd>Shift</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.1s</small></span>
+        <span><span><kbd>Option/Alt</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.5s</small></span>
+        <span><span><kbd>[</kbd> / <kbd>]</kbd></span><small>Set cue start / end</small></span>
+        <span><span><kbd>P</kbd> / <kbd>N</kbd></span><small>Previous / next caption</small></span>
+      </div>`;
+    shortcuts.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        shortcuts.open = false;
+        shortcuts.querySelector("summary")?.focus();
+      }
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (shortcuts.open && !shortcuts.contains(event.target)) shortcuts.open = false;
+    });
+
+    utility.append(safeButton, shortcuts);
+    help.append(utility);
   }
 
   function installSystemReadiness() {
