@@ -6,7 +6,7 @@ import pytest
 
 from accessible_caption_studio.exports import export_captioned_mp4
 from accessible_caption_studio.media import displayed_video_dimensions, inspect_media
-from accessible_caption_studio.models import CaptionCue
+from accessible_caption_studio.models import CaptionCue, CaptionStyle
 from accessible_caption_studio.storage import ProjectStore
 
 
@@ -68,6 +68,7 @@ def _export_dimensions(tmp_path: Path, size: str, sar: str = "1/1") -> tuple[int
     _require_drawtext()
     store = ProjectStore(tmp_path / "storage")
     project = store.create(f"Geometry {size} {sar}")
+    project.caption_style = CaptionStyle(font_family="DejaVu Sans", font_style="Bold")
     source = store.project_dir(project.id) / "source.mp4"
     _make_video(source, size, sar)
     project.media = inspect_media(source)
