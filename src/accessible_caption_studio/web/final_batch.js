@@ -187,12 +187,16 @@
       .caption-localization-section-heading { display:grid; gap:.16rem; }
       .caption-localization-section-heading h3 { margin:0; color:var(--ink); font-size:.88rem; }
       .caption-localization-section-heading p { margin:0; color:var(--muted); font-size:.72rem; line-height:1.4; }
-      .caption-localization-dialog .caption-track-current { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.65rem; align-items:end; }
+      .caption-localization-dialog .caption-track-current { display:grid; grid-template-columns:1fr; gap:.7rem; align-items:stretch; }
       .caption-localization-dialog .caption-track-field { display:grid; gap:.38rem; min-width:0; color:var(--muted); font-size:.72rem; font-weight:800; }
       .caption-localization-dialog .caption-track-field select,
       .caption-localization-dialog .caption-track-add select { width:100%; min-width:0; min-height:40px; border:1px solid #aeb9ce; border-radius:9px; padding:.48rem .65rem; color:var(--ink); background:var(--control); }
-      .caption-localization-dialog .caption-track-status { display:inline-flex; align-items:center; justify-self:start; min-height:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--muted); font-size:.7rem; font-weight:750; line-height:1.35; white-space:normal; }
-      .caption-localization-dialog .caption-track-status.needs-update { color:var(--muted); border-color:transparent; background:transparent; }
+      .caption-localization-dialog .caption-track-review-status { display:grid; gap:.12rem; min-width:0; padding-top:.05rem; }
+      .caption-localization-dialog .caption-track-review-status[hidden] { display:none !important; }
+      .caption-localization-dialog .caption-track-review-status-label { color:var(--muted); font-size:.68rem; font-weight:800; line-height:1.35; }
+      .caption-localization-dialog .caption-track-status { display:block; min-height:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--ink); font-size:.76rem; font-weight:800; line-height:1.35; white-space:normal; }
+      .caption-localization-dialog .caption-track-status.needs-update { color:var(--ink); border-color:transparent; background:transparent; }
+      .caption-localization-dialog .caption-track-status-detail { display:block; max-width:560px; color:var(--muted); font-size:.72rem; font-weight:500; line-height:1.45; }
       .caption-localization-dialog .caption-track-add { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.55rem; align-items:end; }
       .caption-localization-dialog .caption-track-actions { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; }
       .caption-localization-dialog .caption-track-actions button { min-height:36px; }
@@ -613,9 +617,19 @@
     return ({
       reviewed: "Reviewed",
       in_review: "In review",
-      needs_update: "Source changed · review again",
+      needs_update: "Needs review",
       unreviewed: "Needs review",
     })[track.review_state] || "Needs review";
+  }
+
+  function captionTrackStatusDescription(track) {
+    if (!track || track.kind !== "translation") return "";
+    return ({
+      reviewed: "This translation has been marked reviewed.",
+      in_review: "Review this translation, then mark it reviewed when it is ready.",
+      needs_update: "The Original captions changed after this translation was created. Regenerate it before marking it reviewed.",
+      unreviewed: "Review this translation before marking it reviewed.",
+    })[track.review_state] || "Review this translation before marking it reviewed.";
   }
 
   function installCaptionLocalizationDialog() {
@@ -694,7 +708,11 @@
           <label class="caption-track-field" for="captionTrackSelect">Caption track
             <select id="captionTrackSelect" aria-label="Caption track"></select>
           </label>
-          <span id="captionTrackStatus" class="caption-track-status"></span>
+          <div id="captionTrackReviewStatus" class="caption-track-review-status" role="status" aria-live="polite">
+            <span class="caption-track-review-status-label">Review status</span>
+            <strong id="captionTrackStatus" class="caption-track-status"></strong>
+            <span id="captionTrackStatusDetail" class="caption-track-status-detail"></span>
+          </div>
         </div>
       </section>
       <section class="caption-localization-section" aria-labelledby="captionLocalizationAddTitle">
@@ -730,8 +748,12 @@
       select.append(option);
     });
     select.value = active?.id || "";
+    const reviewStatus = body.querySelector("#captionTrackReviewStatus");
     const status = body.querySelector("#captionTrackStatus");
+    const statusDetail = body.querySelector("#captionTrackStatusDetail");
+    reviewStatus.hidden = !translated;
     status.textContent = captionTrackStatusLabel(active);
+    statusDetail.textContent = captionTrackStatusDescription(active);
     status.classList.toggle("needs-update", active?.review_state === "needs_update");
 
     const createButton = body.querySelector("#createCaptionTranslation");

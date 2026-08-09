@@ -383,12 +383,12 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
           state.project = {
             id: 'modal-layout-fixture',
             name: 'Localization layout fixture',
-            active_caption_track_id: 'track-original',
+            active_caption_track_id: 'track-ko',
             caption_tracks: [
               { id: 'track-original', kind: 'original', language: 'en', review_state: 'reviewed', cues: [{ id: 'cue-1', start: 0, end: 1, text: 'Hello' }] },
               { id: 'track-ko', kind: 'translation', language: 'ko', review_state: 'needs_update', cues: [{ id: 'cue-1-ko', start: 0, end: 1, text: '안녕하세요' }] },
             ],
-            cues: [{ id: 'cue-1', start: 0, end: 1, text: 'Hello' }],
+            cues: [{ id: 'cue-1-ko', start: 0, end: 1, text: '안녕하세요' }],
           };
           document.querySelector('#captionLocalizationButton').click();
         }"""
@@ -397,6 +397,11 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
     dialog = page.locator("#captionLocalizationDialog")
     expect(dialog).to_be_visible()
     expect(dialog.get_by_role("heading", name="Languages & translations")).to_be_visible()
+    expect(dialog.get_by_text("Review status", exact=True)).to_be_visible()
+    expect(dialog.locator("#captionTrackStatus")).to_have_text("Needs review")
+    expect(dialog.locator("#captionTrackStatusDetail")).to_have_text(
+        "The Original captions changed after this translation was created. Regenerate it before marking it reviewed."
+    )
     status_style = dialog.locator("#captionTrackStatus").evaluate(
         """element => {
           const style = getComputedStyle(element);
@@ -414,7 +419,7 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
     assert status_style["borderRadius"] == "0px"
     assert status_style["paddingLeft"] == "0px"
     assert status_style["paddingRight"] == "0px"
-    expect(dialog.get_by_label("Caption track", exact=True)).to_have_value("track-original")
+    expect(dialog.get_by_label("Caption track", exact=True)).to_have_value("track-ko")
     expect(dialog.get_by_label("Translated caption language")).to_be_visible()
     assert page.locator("#captionTrackBar").count() == 0
     after = page.locator(".column-labels").evaluate("element => Math.round(element.getBoundingClientRect().top)")
