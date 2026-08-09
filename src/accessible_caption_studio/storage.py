@@ -10,11 +10,25 @@ from uuid import uuid4
 from .models import AnalysisJob, Project, StorageSummary, path_size, utc_now
 
 _SAFE = re.compile(r"[^A-Za-z0-9._ -]+")
+_MAX_FILENAME_LENGTH = 150
 
 
 def safe_filename(value: str, fallback: str = "media") -> str:
     cleaned = _SAFE.sub("", Path(value).name).strip(" .")
-    return cleaned[:150] or fallback
+    if not cleaned:
+        return fallback
+    if len(cleaned) <= _MAX_FILENAME_LENGTH:
+        return cleaned
+
+    path = Path(cleaned)
+    suffix = path.suffix
+    if suffix and len(suffix) < _MAX_FILENAME_LENGTH:
+        available_stem_length = _MAX_FILENAME_LENGTH - len(suffix)
+        stem = path.stem[:available_stem_length].rstrip(" .")
+        if stem:
+            return f"{stem}{suffix}"
+
+    return cleaned[:_MAX_FILENAME_LENGTH].rstrip(" .") or fallback
 
 
 class ProjectStore:
