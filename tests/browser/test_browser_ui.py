@@ -191,54 +191,87 @@ def test_card_view_uses_uniform_heights_and_preserves_filename_extension(page: P
     expect(long_title).to_have_text(long_name)
 
 
-def test_favorite_controls_share_the_same_lucide_icon(page: Page, studio_url: str) -> None:
+def test_favorite_controls_share_one_centered_surface(page: Page, studio_url: str) -> None:
+    projects = [
+        {
+            "id": "favorite-style-project",
+            "name": "favorite-style-project.mp4",
+            "cues": [],
+            "media": {"has_video": False},
+            "updated_at": "2026-08-09T08:00:00Z",
+            "is_favorite": False,
+        }
+    ]
+    page.route(
+        "**/api/projects",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(projects)),
+    )
     _open(page, studio_url)
     page.locator("body").evaluate(
         """body => {
-          const fixture = document.createElement('div');
-          fixture.id = 'favorite-icon-fixture';
-          fixture.innerHTML = `
-            <button class="project-favorite" aria-label="Favorite project" aria-pressed="false">☆</button>
-            <button class="caption-font-favorite" aria-label="Favorite font" aria-pressed="false">☆</button>`;
+          const fixture = document.createElement('button');
+          fixture.id = 'font-favorite-style-fixture';
+          fixture.className = 'caption-font-favorite';
+          fixture.setAttribute('aria-label', 'Favorite font');
+          fixture.setAttribute('aria-pressed', 'false');
+          fixture.textContent = '☆';
           body.append(fixture);
         }"""
     )
 
-    project = page.locator("#favorite-icon-fixture .project-favorite")
-    font = page.locator("#favorite-icon-fixture .caption-font-favorite")
-    inactive = page.evaluate(
-        """() => {
-          const project = document.querySelector('#favorite-icon-fixture .project-favorite');
-          const font = document.querySelector('#favorite-icon-fixture .caption-font-favorite');
-          const projectIcon = getComputedStyle(project, '::before');
-          const fontIcon = getComputedStyle(font, '::before');
-          return {
-            projectMask: projectIcon.maskImage || projectIcon.webkitMaskImage,
-            fontMask: fontIcon.maskImage || fontIcon.webkitMaskImage,
-            projectFontSize: getComputedStyle(project).fontSize,
-            fontFontSize: getComputedStyle(font).fontSize,
-          };
-        }"""
-    )
-    assert inactive["projectMask"] == inactive["fontMask"]
-    assert "data:image/svg+xml;base64" in inactive["projectMask"]
-    assert inactive["projectFontSize"] == "0px"
-    assert inactive["fontFontSize"] == "0px"
+    project = page.locator('[data-project-id="favorite-style-project"] .project-favorite')
+    font = page.locator("#font-favorite-style-fixture")
+
+    def favorite_surface(locator):
+        return locator.evaluate(
+            """element => {
+              const style = getComputedStyle(element);
+              const icon = getComputedStyle(element, '::before');
+              const rect = element.getBoundingClientRect();
+              return {
+                background: style.backgroundColor,
+                border: style.borderColor,
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                display: style.display,
+                alignItems: style.alignItems,
+                justifyItems: style.justifyItems,
+                iconWidth: icon.width,
+                iconHeight: icon.height,
+                iconTransform: icon.transform,
+                mask: icon.maskImage || icon.webkitMaskImage,
+              };
+            }"""
+        )
+
+    card_surface = favorite_surface(project)
+    font_surface = favorite_surface(font)
+    assert card_surface["background"] == font_surface["background"]
+    assert card_surface["border"] == font_surface["border"]
+    assert card_surface["width"] == font_surface["width"] == 34
+    assert card_surface["height"] == font_surface["height"] == 34
+    assert card_surface["iconWidth"] == font_surface["iconWidth"] == "18px"
+    assert card_surface["iconHeight"] == font_surface["iconHeight"] == "18px"
+    assert card_surface["iconTransform"] == font_surface["iconTransform"]
+    assert card_surface["mask"] == font_surface["mask"]
+    assert "data:image/svg+xml;base64" in card_surface["mask"]
+
+    page.get_by_label("Project view").select_option("compact")
+    compact_surface = favorite_surface(project)
+    assert compact_surface["background"] == card_surface["background"]
+    assert compact_surface["border"] == card_surface["border"]
+    assert compact_surface["width"] == card_surface["width"]
+    assert compact_surface["height"] == card_surface["height"]
+    assert compact_surface["iconTransform"] == card_surface["iconTransform"]
 
     project.evaluate("element => element.setAttribute('aria-pressed', 'true')")
     font.evaluate("element => element.setAttribute('aria-pressed', 'true')")
-    active = page.evaluate(
-        """() => {
-          const project = getComputedStyle(document.querySelector('#favorite-icon-fixture .project-favorite'), '::before');
-          const font = getComputedStyle(document.querySelector('#favorite-icon-fixture .caption-font-favorite'), '::before');
-          return {
-            projectMask: project.maskImage || project.webkitMaskImage,
-            fontMask: font.maskImage || font.webkitMaskImage,
-          };
-        }"""
-    )
-    assert active["projectMask"] == active["fontMask"]
-    assert active["projectMask"] != inactive["projectMask"]
+    active_project = favorite_surface(project)
+    active_font = favorite_surface(font)
+    assert active_project["background"] == active_font["background"]
+    assert active_project["border"] == active_font["border"]
+    assert active_project["mask"] == active_font["mask"]
+    assert active_project["mask"] != card_surface["mask"]
 
 
 def test_basic_accessibility_structure_and_settings_focus(page: Page, studio_url: str) -> None:

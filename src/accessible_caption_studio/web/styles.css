@@ -1650,3 +1650,81 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
     transform: scale(.92);
   }
 }
+
+
+
+/* Shared favorite control refinement */
+.project-favorite,
+.caption-font-favorite {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  padding: 0 !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  color: var(--muted) !important;
+  background: var(--control) !important;
+  box-shadow: 0 1px 3px rgba(20, 35, 70, .08) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  line-height: 0 !important;
+}
+
+.project-favorite::before,
+.caption-font-favorite::before {
+  width: 18px !important;
+  height: 18px !important;
+  margin: 0 !important;
+  transform: translateY(.5px);
+  transform-origin: center;
+}
+
+.project-favorite[aria-pressed="true"],
+.caption-font-favorite[aria-pressed="true"],
+.caption-font-favorite.is-favorite {
+  color: #a66b00 !important;
+  border-color: color-mix(in srgb, #a66b00 36%, var(--line)) !important;
+  background: var(--finding) !important;
+}
+
+.project-favorite:focus-visible,
+.caption-font-favorite:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 44%, transparent) !important;
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .project-favorite,
+  .caption-font-favorite {
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .project-favorite:hover,
+  .caption-font-favorite:hover {
+    color: var(--ink) !important;
+    border-color: color-mix(in srgb, var(--blue) 26%, var(--line)) !important;
+    background: var(--subtle) !important;
+    box-shadow: 0 2px 6px rgba(20, 35, 70, .11) !important;
+  }
+
+  .project-favorite[aria-pressed="true"]:hover,
+  .caption-font-favorite[aria-pressed="true"]:hover,
+  .caption-font-favorite.is-favorite:hover {
+    color: #a66b00 !important;
+    border-color: color-mix(in srgb, #a66b00 46%, var(--line)) !important;
+    background: var(--finding) !important;
+  }
+
+  .project-favorite:hover::before,
+  .caption-font-favorite:hover::before {
+    transform: translateY(.5px) scale(1.06);
+  }
+
+  .project-favorite:active::before,
+  .caption-font-favorite:active::before {
+    transform: translateY(.5px) scale(.92);
+  }
+}
