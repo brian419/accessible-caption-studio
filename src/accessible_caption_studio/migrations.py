@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+from uuid import uuid4
 
-CURRENT_PROJECT_SCHEMA_VERSION = 3
+CURRENT_PROJECT_SCHEMA_VERSION = 4
 
 
 def migrate_project_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -45,6 +46,32 @@ def migrate_project_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], bo
             data.setdefault("sdh_mode", "full")
             data["schema_version"] = 3
             version = 3
+            changed = True
+            continue
+        if version == 3:
+            spoken_language = str(data.get("transcription_language") or "en")
+            original_language = spoken_language if spoken_language != "auto" else "und"
+            track_id = uuid4().hex
+            data.setdefault("spoken_language", spoken_language)
+            data.setdefault("detected_language", None)
+            data.setdefault("requested_caption_languages", [])
+            data["caption_tracks"] = [
+                {
+                    "id": track_id,
+                    "language": original_language,
+                    "kind": "original",
+                    "source_track_id": None,
+                    "source_language": None,
+                    "review_state": "unreviewed",
+                    "cues": deepcopy(data.get("cues", []) or []),
+                    "findings": deepcopy(data.get("findings", []) or []),
+                    "exports": deepcopy(data.get("exports", []) or []),
+                    "translation_model": None,
+                }
+            ]
+            data["active_caption_track_id"] = track_id
+            data["schema_version"] = 4
+            version = 4
             changed = True
             continue
         raise ValueError(f"No migration path exists for project schema version {version}")

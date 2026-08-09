@@ -19,6 +19,7 @@ MODEL_SPECS = (
     ("sound-ast", "AST sound recognition", "Meaningful non-speech sound detection"),
     ("overlap-sepformer", "SepFormer overlap separation", "Two-speaker separation for selected intervals"),
     ("face-yunet-sface", "YuNet + SFace", "Anonymous local face detection and matching"),
+    ("translation-m2m100", "M2M100 translation", "Local many-to-many caption translation model"),
 )
 
 
@@ -136,6 +137,9 @@ class ModelManager:
             "sound-ast": [self.root / "huggingface" / "models--MIT--ast-finetuned-audioset-10-10-0.4593"],
             "overlap-sepformer": [self.root / "speechbrain" / "sepformer-whamr16k"],
             "face-yunet-sface": [self.root / "opencv-face"],
+            "translation-m2m100": [
+                self.root / "huggingface" / "models--facebook--m2m100_418M"
+            ],
         }
         if model_id in exact:
             return [path for path in exact[model_id] if path.exists()]

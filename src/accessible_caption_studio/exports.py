@@ -20,6 +20,13 @@ except ImportError:  # Pillow is optional; a conservative width estimate remains
     ImageFont = None
 
 
+def _caption_track_suffix(project: Project) -> str:
+    if len(project.caption_tracks) <= 1:
+        return ""
+    language = safe_filename(project.active_caption_track().language, "und")
+    return f" - {language}"
+
+
 def export_text(project: Project, project_dir: Path, format_name: str) -> ExportArtifact:
     exports = project_dir / "exports"
     exports.mkdir(exist_ok=True)
@@ -33,17 +40,18 @@ def export_text(project: Project, project_dir: Path, format_name: str) -> Export
     elif format_name == "vtt":
         content, suffix = to_vtt(display_cues), ".vtt"
     elif format_name == "ttml":
-        content, suffix = to_ttml(display_cues, project.transcription_language), ".ttml"
+        content, suffix = to_ttml(display_cues, project.active_caption_track().language), ".ttml"
     elif format_name == "html":
         content, suffix = to_transcript_html(project.name, display_cues), ".html"
     elif format_name == "report":
         content, suffix = accessibility_report_html(project), " - accessibility report.html"
     else:
         raise ValueError("unsupported text export")
+    track_suffix = _caption_track_suffix(project)
     destination = (
-        exports / f"{base}{suffix}"
+        exports / f"{base}{track_suffix}{suffix}"
         if format_name == "report"
-        else exports / f"{base} - accessible captions{suffix}"
+        else exports / f"{base}{track_suffix} - accessible captions{suffix}"
     )
     partial = destination.with_suffix(destination.suffix + ".partial")
     partial.write_text(content, encoding="utf-8")
@@ -388,8 +396,9 @@ def export_captioned_mp4(
     exports = project_dir / "exports"
     exports.mkdir(exist_ok=True)
     base = safe_filename(project.name, "Accessible video")
-    destination = exports / f"{base} - captioned.mp4"
-    partial = exports / f".{base} - captioned.partial.mp4"
+    track_suffix = _caption_track_suffix(project)
+    destination = exports / f"{base}{track_suffix} - captioned.mp4"
+    partial = exports / f".{base}{track_suffix} - captioned.partial.mp4"
     partial.unlink(missing_ok=True)
 
     register = getattr(job_context, "register_process", None)

@@ -80,6 +80,7 @@ class ProjectStore:
 
     def save(self, project: Project, *, touch: bool = True) -> Project:
         with self._lock:
+            project.sync_active_caption_track()
             project.schema_version = CURRENT_PROJECT_SCHEMA_VERSION
             if touch:
                 project.updated_at = utc_now()
@@ -100,6 +101,9 @@ class ProjectStore:
         duplicate.id = uuid4().hex
         duplicate.name = f"{source.name} copy"
         duplicate.exports = []
+        for track in duplicate.caption_tracks:
+            track.exports = []
+        duplicate.refresh_caption_track_view()
         duplicate.latest_job_id = None
         duplicate.is_favorite = False
         target_dir = self.project_dir(duplicate.id)

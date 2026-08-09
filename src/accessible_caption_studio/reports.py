@@ -33,7 +33,13 @@ def _reading_speeds(project: Project) -> list[float]:
 
 def accessibility_report_html(project: Project) -> str:
     duration = project.media.duration if project.media else None
-    findings = validate_cues(project.cues, duration)
+    findings = list(project.findings)
+    known = {(item.code, item.cue_id, item.message) for item in findings}
+    for finding in validate_cues(project.cues, duration):
+        key = (finding.code, finding.cue_id, finding.message)
+        if key not in known:
+            findings.append(finding)
+            known.add(key)
     findings.extend(caption_style_readability_findings(project.caption_style))
     severities = Counter(finding.severity.value for finding in findings)
     speeds = _reading_speeds(project)
@@ -65,7 +71,11 @@ def accessibility_report_html(project: Project) -> str:
     finding_rows = "".join(rows) or (
         '<tr><td colspan="4">No automatic authoring findings are currently open.</td></tr>'
     )
-    language = project.transcription_language
+    active_track = project.active_caption_track()
+    language = active_track.language
+    spoken_language = project.detected_language or project.spoken_language
+    track_kind = active_track.kind.title()
+    review_state = active_track.review_state.replace("_", " ").title()
     sdh = project.sdh_mode.title()
     safe_title = html.escape(project.name)
     return f"""<!doctype html>
@@ -98,7 +108,7 @@ def accessibility_report_html(project: Project) -> str:
     <div class="stat"><strong>{maximum_speed:.1f}</strong><span>Maximum characters/sec</span></div>
     <div class="stat"><strong>{len(findings)}</strong><span>Open findings</span></div>
   </div>
-  <p>Transcription language: <strong>{html.escape(language)}</strong>. Sound-caption mode: <strong>{html.escape(sdh)}</strong>.</p>
+  <p>Caption track: <strong>{html.escape(language)}</strong> ({html.escape(track_kind)}). Review state: <strong>{html.escape(review_state)}</strong>. Spoken language: <strong>{html.escape(spoken_language)}</strong>. Sound-caption mode: <strong>{html.escape(sdh)}</strong>.</p>
   <p>Findings by severity: {severities.get(Severity.ERROR.value, 0)} errors, {severities.get(Severity.WARNING.value, 0)} warnings, {severities.get(Severity.INFO.value, 0)} informational findings.</p>
   <h2>Outstanding authoring findings</h2>
   <table><thead><tr><th>Severity</th><th>Code</th><th>Location</th><th>Finding</th></tr></thead><tbody>{finding_rows}</tbody></table>
