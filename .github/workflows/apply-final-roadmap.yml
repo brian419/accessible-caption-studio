@@ -21,7 +21,16 @@ jobs:
           fetch-depth: 0
 
       - name: Apply final roadmap batch
-        run: python scripts/apply_final_roadmap_batch.py
+        run: |
+          python scripts/apply_final_roadmap_batch.py
+          # Workflow files cannot be pushed by this Actions token. The release
+          # workflow is added directly after the product batch is validated.
+          rm -f .github/workflows/release.yml
+          # The model manager uses its own deduplicated size calculation.
+          sed -i 's/from \.models import path_size, utc_now/from .models import utc_now/' src/accessible_caption_studio/model_management.py
+          python -m compileall -q src tests
+          node --check src/accessible_caption_studio/web/app.js
+          node --check src/accessible_caption_studio/web/final_batch.js
 
       - name: Commit generated changes
         run: |
