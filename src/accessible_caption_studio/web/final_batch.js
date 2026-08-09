@@ -1,6 +1,7 @@
 (() => {
   const languageStorageKey = "accessible-caption-transcription-language";
   const sdhStorageKey = "accessible-caption-sdh-mode";
+  const projectViewStorageKey = "accessible-caption-project-view";
   const languages = [
     ["auto", "Auto-detect"], ["en", "English"], ["es", "Spanish"], ["fr", "French"],
     ["de", "German"], ["it", "Italian"], ["pt", "Portuguese"], ["nl", "Dutch"],
@@ -71,10 +72,23 @@
       .captioning-options-grid label, .project-preference-card label { display:grid; gap:.35rem; color:var(--ink); font-size:.78rem; font-weight:750; }
       .captioning-options-grid select, .project-preference-card select { width:100%; border:1px solid #aeb9ce; border-radius:9px; padding:.58rem .65rem; color:var(--ink); background:var(--control); }
       .captioning-options-note { grid-column:1/-1; margin:0; color:var(--muted); font-size:.72rem; line-height:1.45; }
-      .project-thumbnail { width:72px; height:46px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:var(--wash); grid-row:1 / span 3; }
-      .project-card .project-open:has(.project-thumbnail) { display:grid; grid-template-columns:72px auto minmax(0,1fr); column-gap:.7rem; align-items:center; }
-      .project-card .project-open:has(.project-thumbnail) .project-type { grid-column:2; }
-      .project-card .project-open:has(.project-thumbnail) strong, .project-card .project-open:has(.project-thumbnail) > span:not(.project-type):not(.project-job-status) { grid-column:3; }
+      .project-thumbnail { width:88px; height:56px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:var(--wash); grid-column:1; grid-row:1 / span 2; margin-top:.08rem; }
+      .project-card .project-open:has(.project-thumbnail) { display:grid; grid-template-columns:88px minmax(0,1fr); grid-template-rows:auto auto; column-gap:.85rem; row-gap:.08rem; align-items:start; }
+      .project-card .project-open:has(.project-thumbnail) .project-type { display:none !important; }
+      .project-card .project-open:has(.project-thumbnail) strong { grid-column:2; grid-row:1; min-width:0; margin:.05rem 0 .22rem; line-height:1.25; }
+      .project-card .project-open:has(.project-thumbnail) > span:not(.project-type):not(.project-job-status) { grid-column:2; grid-row:2; min-width:0; }
+      .project-view-select { min-width:132px; }
+      .project-grid.project-grid-compact { grid-template-columns:1fr; gap:.55rem; }
+      .project-grid-compact .project-card { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:.75rem; padding:.72rem .8rem; }
+      .project-grid-compact .project-card:hover { transform:none; }
+      .project-grid-compact .project-open { min-width:0; display:grid; grid-template-columns:40px minmax(0,1fr); grid-template-rows:auto auto; column-gap:.7rem; row-gap:.08rem; align-items:center; }
+      .project-grid-compact .project-open .project-type { grid-column:1; grid-row:1 / span 2; }
+      .project-grid-compact .project-open strong { grid-column:2; grid-row:1; min-width:0; margin:0 0 .16rem; font-size:.92rem; line-height:1.25; }
+      .project-grid-compact .project-open > span:not(.project-type):not(.project-job-status) { grid-column:2; grid-row:2; min-width:0; }
+      .project-grid-compact .project-open:has(.project-thumbnail) { grid-template-columns:64px minmax(0,1fr); grid-template-rows:auto auto; column-gap:.7rem; }
+      .project-grid-compact .project-open:has(.project-thumbnail) .project-thumbnail { width:64px; height:40px; grid-column:1; grid-row:1 / span 2; margin:0; }
+      .project-grid-compact .project-card-actions { align-self:center; display:flex; gap:.35rem; margin:0; padding:0; border-top:0; }
+      .project-grid-compact .project-action { min-height:30px; padding:.3rem .5rem; }
       .model-manager-details { border-top:1px solid var(--line); padding-top:.75rem; }
       .model-manager-details > summary { cursor:pointer; font-weight:800; }
       .model-manager-copy { margin:.4rem 0 .7rem; color:var(--muted); font-size:.78rem; }
@@ -91,8 +105,11 @@
       @media (max-width:560px) {
         .captioning-options-grid { grid-template-columns:1fr; }
         .captioning-options-note { grid-column:1; }
-        .project-card .project-open:has(.project-thumbnail) { grid-template-columns:58px auto minmax(0,1fr); }
-        .project-thumbnail { width:58px; height:42px; }
+        .project-card .project-open:has(.project-thumbnail) { grid-template-columns:64px minmax(0,1fr); }
+        .project-thumbnail { width:64px; height:42px; }
+        .project-view-select { grid-column:1 / -1; min-width:0; }
+        .project-grid-compact .project-card { grid-template-columns:1fr; align-items:stretch; }
+        .project-grid-compact .project-card-actions { padding-top:.55rem; border-top:1px solid var(--soft-line); }
         .model-manager-row { grid-template-columns:1fr; }
         .model-manager-row button { width:100%; }
       }
@@ -213,9 +230,53 @@
     add("report", "Accessibility report", "Saved authoring findings, statistics, and review status");
   }
 
+  function projectViewMode() {
+    const value = readPreference(projectViewStorageKey, "default");
+    return value === "compact" ? "compact" : "default";
+  }
+
+  function applyProjectViewMode() {
+    const list = document.querySelector("#projectList");
+    if (!list) return;
+    const mode = projectViewMode();
+    list.classList.toggle("project-grid-compact", mode === "compact");
+    list.dataset.viewMode = mode;
+    const select = document.querySelector("#projectViewMode");
+    if (select && select.value !== mode) select.value = mode;
+  }
+
+  function installProjectViewControl() {
+    if (document.querySelector("#projectViewMode")) {
+      applyProjectViewMode();
+      return;
+    }
+    const actions = document.querySelector(".project-browser-actions") || document.querySelector(".project-refine-controls");
+    if (!actions) return;
+    const label = document.createElement("label");
+    label.className = "project-compact-select project-view-select";
+    label.innerHTML = `
+      <span class="sr-only">Project view</span>
+      <select id="projectViewMode" aria-label="Project view">
+        <option value="default">Default cards</option>
+        <option value="compact">Compact list</option>
+      </select>`;
+    const count = actions.querySelector("#projectFilterCount");
+    if (count) actions.insertBefore(label, count);
+    else actions.append(label);
+    const select = label.querySelector("select");
+    select.value = projectViewMode();
+    select.addEventListener("change", () => {
+      writePreference(projectViewStorageKey, select.value);
+      applyProjectViewMode();
+    });
+    applyProjectViewMode();
+  }
+
   const previousRenderProjectsFinal = renderProjects;
   renderProjects = function renderProjectsWithThumbnails() {
     previousRenderProjectsFinal();
+    installProjectViewControl();
+    applyProjectViewMode();
     document.querySelectorAll(".project-card[data-project-id]").forEach((card) => {
       const project = state.projects.find((item) => String(item.id) === String(card.dataset.projectId));
       if (!project?.media?.has_video || card.querySelector(".project-thumbnail")) return;

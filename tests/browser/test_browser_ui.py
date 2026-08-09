@@ -22,6 +22,7 @@ def test_home_desktop_controls_and_no_horizontal_overflow(page: Page, studio_url
     expect(page.get_by_label("Search projects")).to_be_visible()
     expect(page.locator("#projectTypeFilter")).to_be_visible()
     expect(page.get_by_label("Sort")).to_be_visible()
+    expect(page.get_by_label("Project view")).to_be_visible()
     expect(page.get_by_role("button", name="Restore backup")).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
 
@@ -88,3 +89,20 @@ def test_keyboard_skip_link_reaches_main_content(page: Page, studio_url: str) ->
     expect(skip_link).to_be_focused()
     page.keyboard.press("Enter")
     expect(page.locator("#main")).to_be_focused()
+
+
+def test_project_view_mode_persists_between_visits(page: Page, studio_url: str) -> None:
+    _open(page, studio_url)
+
+    view = page.get_by_label("Project view")
+    expect(view).to_have_value("default")
+    view.select_option("compact")
+    expect(page.locator("#projectList")).to_have_class(re.compile(r"\bproject-grid-compact\b"))
+
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#projectBrowserControls")).to_be_attached()
+    expect(page.get_by_label("Project view")).to_have_value("compact")
+    expect(page.locator("#projectList")).to_have_class(re.compile(r"\bproject-grid-compact\b"))
+
+    page.get_by_label("Project view").select_option("default")
+    expect(page.locator("#projectList")).not_to_have_class(re.compile(r"\bproject-grid-compact\b"))
