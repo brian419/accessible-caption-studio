@@ -32,8 +32,18 @@ def translate(
         revision=MODEL_REVISION,
         cache_dir=str(cache_dir),
         use_safetensors=True,
+        low_cpu_mem_usage=False,
     )
-    model.to("cpu")
+    meta_parameters = [
+        name for name, parameter in model.named_parameters() if parameter.device.type == "meta"
+    ]
+    if meta_parameters:
+        preview = ", ".join(meta_parameters[:3])
+        raise RuntimeError(
+            "M2M100 did not fully materialize on CPU. "
+            f"Meta parameters remain: {preview}. "
+            "Restart Accessible Caption Studio so its managed ML environment can be rebuilt."
+        )
     model.eval()
     tokenizer.src_lang = source_language
 
