@@ -8,7 +8,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from accessible_caption_studio.exports import _render_items
-from accessible_caption_studio.migrations import migrate_project_payload
+from accessible_caption_studio.migrations import (
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    migrate_project_payload,
+)
 from accessible_caption_studio.models import CaptionCue, MediaAsset, Project
 from accessible_caption_studio.storage import ProjectStore
 from accessible_caption_studio.webapp import create_app
@@ -45,6 +48,8 @@ def test_schema_v1_migrates_favorite_and_cue_placement_defaults() -> None:
     payload = project.model_dump(mode="json")
     payload["schema_version"] = 1
     payload.pop("is_favorite", None)
+    payload.pop("transcription_language", None)
+    payload.pop("sdh_mode", None)
     payload["cues"] = [
         {
             "id": "a" * 32,
@@ -62,8 +67,10 @@ def test_schema_v1_migrates_favorite_and_cue_placement_defaults() -> None:
     migrated, changed = migrate_project_payload(payload)
 
     assert changed is True
-    assert migrated["schema_version"] == 2
+    assert migrated["schema_version"] == CURRENT_PROJECT_SCHEMA_VERSION == 3
     assert migrated["is_favorite"] is False
+    assert migrated["transcription_language"] == "en"
+    assert migrated["sdh_mode"] == "full"
     assert migrated["cues"][0]["position_override"] is None
     assert migrated["cues"][0]["alignment_override"] is None
     assert migrated["cues"][0]["vertical_margin_percent_override"] is None
