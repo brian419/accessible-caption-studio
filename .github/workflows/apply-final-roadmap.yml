@@ -6,6 +6,7 @@ on:
       - major-iterations-batch-2
     paths:
       - scripts/apply_final_roadmap_batch.py
+      - .github/final-roadmap-trigger.txt
 
 permissions:
   contents: write
