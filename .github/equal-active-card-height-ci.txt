@@ -1,0 +1,1 @@
+verify equal active job card height
