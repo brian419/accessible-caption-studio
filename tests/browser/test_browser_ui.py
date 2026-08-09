@@ -145,6 +145,30 @@ def test_compact_view_keeps_copy_actions_and_favorite_separate(page: Page, studi
     assert card.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
 
 
+def test_card_view_uses_uniform_heights_and_preserves_filename_extension(page: Page, studio_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
+    _open(page, studio_url)
+    page.get_by_label("Project view").select_option("default")
+
+    cards = page.locator("#projectList .project-card")
+    if cards.count() >= 2:
+        heights = cards.evaluate_all("items => items.slice(0, 3).map(item => Math.round(item.getBoundingClientRect().height))")
+        assert len(set(heights)) == 1
+
+    page.locator("#projectList").evaluate(
+        """list => {
+          const card = document.createElement('article');
+          card.id = 'extension-card-regression';
+          card.className = 'project-card';
+          card.dataset.projectId = '__extension_test__';
+          card.innerHTML = `<button class="project-open" type="button"><img class="project-thumbnail" alt=""><strong>placeholder.mp4</strong><span>1 caption · now</span></button><div class="project-card-actions"><button>Duplicate</button></div>`;
+          list.append(card);
+        }"""
+    )
+    card = page.locator("#extension-card-regression")
+    assert round(card.evaluate("element => element.getBoundingClientRect().height")) in (264, 272)
+
+
 def test_basic_accessibility_structure_and_settings_focus(page: Page, studio_url: str) -> None:
     _open(page, studio_url)
 
