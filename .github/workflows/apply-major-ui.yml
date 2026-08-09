@@ -1,0 +1,34 @@
+name: Apply major UI iteration
+
+on:
+  push:
+    branches: [major-iterations]
+    paths:
+      - scripts/apply_major_ui.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-iterations
+
+      - name: Apply UI patch
+        run: python scripts/apply_major_ui.py
+
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/app.js src/accessible_caption_studio/web/styles.css src/accessible_caption_studio/webapp.py
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git commit -m "Add project and caption productivity tools"
+          git push origin HEAD:major-iterations
