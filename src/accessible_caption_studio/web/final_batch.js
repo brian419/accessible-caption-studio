@@ -95,7 +95,7 @@
       .project-grid:not(.project-grid-compact) .project-job-status { margin:.05rem .9rem .75rem; }
       .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status { position:absolute; left:.9rem; right:.9rem; bottom:4rem; z-index:1; width:auto; margin:0; padding:0; }
       .project-grid:not(.project-grid-compact) .project-card.has-active-job .project-job-status-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .project-grid:not(.project-grid-compact) .project-card-actions { margin:auto .9rem .85rem; padding-top:.7rem; }
+      .project-grid:not(.project-grid-compact) .project-card-actions { margin:auto .9rem .85rem; padding-top:.45rem; }
       .project-grid:not(.project-grid-compact) .project-favorite { top:.55rem; right:.55rem; background:color-mix(in srgb,var(--paper) 86%,transparent); box-shadow:0 2px 8px rgba(20,35,70,.14); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
 
       .project-grid.project-grid-compact { grid-template-columns:1fr; gap:.48rem; }
