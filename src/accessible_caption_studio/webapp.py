@@ -15,8 +15,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from .analyzer import LocalAnalyzer
 from .captions import parse_caption_file
@@ -388,502 +388,222 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Media is not ready for analysis")
         if request.end <= request.start:
             raise HTTPException(status_code=400, detail="End time must follow start time")
-        if request.end - request.start > 30:
-            raise HTTPException(
-                status_code=400, detail="Overlapping-voice analysis is limited to 30 seconds"
-            )
-        if request.end > project.media.duration + 0.05:
-            raise HTTPException(status_code=400, detail="The selected interval exceeds the media")
 
-        def target(job: Any, progress: Callable[[str, int, str], None]) -> None:
-            current = store.get(project_id)
+        def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
             project_dir = store.project_dir(project_id)
             audio = project_dir / "analysis.wav"
             if not audio.is_file():
-                progress("Preparing audio", 5, "Extracting the selected local audio track")
-                extract_audio(project_dir / current.media.stored_name, audio, progress)
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
-            channels, matched_speakers = analyzer.analyze_overlap(
-                audio, request.start, request.end, current.speakers, progress
+                extract_audio(project_dir / project.media.stored_name, audio)
+            analyzer = LocalAnalyzer(project_dir, model_cache_dir=store.models_dir)
+            progress("Inspecting overlap", 5, "Separating overlapping voices")
+            proposal = analyzer.overlap_proposal(
+                audio,
+                request.start,
+                request.end,
+                project.speakers,
+                project.cues,
+                progress=progress,
             )
-            existing_speakers: list[str] = []
-            for turn in current.speakers:
-                if turn.end <= request.start or turn.start >= request.end:
-                    continue
-                if turn.speaker not in existing_speakers:
-                    existing_speakers.append(turn.speaker)
-            all_speakers = {turn.speaker for turn in current.speakers}
-            next_number = 1
-            while f"Speaker {next_number}" in all_speakers or len(existing_speakers) < 2:
-                candidate = f"Speaker {next_number}"
-                if candidate not in existing_speakers:
-                    existing_speakers.append(candidate)
-                next_number += 1
-                if len(existing_speakers) >= 2:
-                    break
-            group_id = uuid4().hex
-            proposals = []
-            assigned_speakers: list[str] = []
-            for index, words in enumerate(channels[:2]):
-                confidences = [word.confidence for word in words if word.confidence is not None]
-                speaker = matched_speakers[index]
-                if not speaker or speaker in assigned_speakers:
-                    speaker = next(
-                        item for item in existing_speakers if item not in assigned_speakers
-                    )
-                assigned_speakers.append(speaker)
-                proposals.append(
-                    CaptionCue(
-                        start=request.start,
-                        end=request.end,
-                        text=" ".join(word.text.strip() for word in words),
-                        speaker=speaker,
-                        source="transcription",
-                        confidence=sum(confidences) / len(confidences) if confidences else None,
-                        overlap_group_id=group_id,
-                    ).model_dump(mode="json")
-                )
-            job.result = {
-                "type": "overlap_proposal",
-                "start": request.start,
-                "end": request.end,
-                "replace_cue_ids": [
-                    cue.id
-                    for cue in current.cues
-                    if cue.start < request.end and cue.end > request.start
-                ],
-                "cues": proposals,
-            }
-            progress("Review separated voices", 95, "Two proposed speaker lines are ready")
+            result_path = project_dir / f"overlap-{_job.id}.json"
+            result_path.write_text(json.dumps(proposal, default=_json_default), encoding="utf-8")
 
-        job = jobs.start(project_id, "overlap-analysis", target)
-        project.latest_job_id = job.id
-        store.save(project)
-        return job
+        return jobs.start(project_id, "overlap", target)
+
+    @app.get("/api/projects/{project_id}/overlap-proposals/{job_id}")
+    def overlap_proposal(project_id: str, job_id: str) -> Any:
+        _get_project(store, project_id)
+        path = store.project_dir(project_id) / f"overlap-{safe_filename(job_id)}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Overlap proposal not ready")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @app.post("/api/projects/{project_id}/reanalyze-speakers", status_code=202)
-    def reanalyze_speakers(project_id: str, request: SpeakerReanalysisRequest) -> Any:
+    def reanalyze_speakers(project_id: str, request: SpeakerReanalysisRequest) -> AnalysisJob:
         project = _get_project(store, project_id)
-        if not project.media or not project.words:
+        if not project.media:
+            raise HTTPException(status_code=400, detail="Media is not ready for speaker analysis")
+        if not project.words:
             raise HTTPException(
                 status_code=400,
                 detail="Run automatic caption analysis before re-detecting speakers",
             )
-        base_updated_at = project.updated_at.isoformat()
+        project.expected_speaker_count = request.expected_speaker_count
+        store.save(project)
 
-        def target(job: Any, progress: Callable[[str, int, str], None]) -> None:
-            current = store.get(project_id)
+        def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
             project_dir = store.project_dir(project_id)
             audio = project_dir / "analysis.wav"
             if not audio.is_file():
-                progress("Preparing audio", 5, "Extracting the local speaker-analysis track")
-                extract_audio(project_dir / current.media.stored_name, audio, progress)
-            progress(
-                "Re-detecting speakers",
-                10,
-                "Loading the local voice model; this can take a few minutes on Intel Macs",
+                extract_audio(project_dir / project.media.stored_name, audio)
+            turns, face_tracks, fusion = analyze_active_speakers(
+                project_dir / project.media.stored_name,
+                audio,
+                project.words,
+                project_dir,
+                store.models_dir,
+                progress=progress,
+                expected_speaker_count=request.expected_speaker_count,
             )
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
-            try:
-                speakers = analyzer.diarize(
-                    audio,
-                    current.words,
-                    progress,
-                    request.expected_speaker_count,
-                )
-                if speakers and not getattr(analyzer, "voice_cluster_count", 0):
-                    analyzer.voice_cluster_count = len(
-                        {turn.speaker for turn in speakers}
-                    )
-            except StudioError as exc:
-                speakers = []
-                analyzer.voice_cluster_count = 0
-                analyzer.warnings.append((exc.code, exc.message))
-                progress(
-                    "Voice comparison unavailable",
-                    65,
-                    "Trying anonymous recurring-face evidence instead",
-                )
-            face_tracks = current.face_tracks
-            visual_status = current.visual_speaker_status
-            fusion_summary = FusionSummary(
-                voice_cluster_count=getattr(analyzer, "voice_cluster_count", 0),
-                final_speaker_count=len({turn.speaker for turn in speakers}),
-            )
-            evidence_temp = project_dir / f"speaker-evidence-{job.id}.json"
-            visual_input = speakers or _provisional_speech_turns(current.words)
-            if current.media.has_video and visual_input:
-                try:
-                    speakers, face_tracks, visual_status, fusion_summary = (
-                        analyze_active_speakers(
-                            project_dir / current.media.stored_name,
-                            audio,
-                            store.models_dir,
-                            evidence_temp,
-                            visual_input,
-                            progress,
-                            request.expected_speaker_count,
-                            getattr(analyzer, "voice_cluster_count", None),
-                            current.words,
-                        )
-                    )
-                except StudioError as exc:
-                    visual_status = "audio_fallback"
-                    analyzer.warnings.append((exc.code, exc.message))
-            if not getattr(analyzer, "voice_cluster_count", 0) and not (
-                fusion_summary.face_identity_count
-            ):
-                speakers = []
-            cues, change_summary = _build_speaker_proposal(current, speakers)
-            findings = _findings_with_speaker_uncertainty(
-                cues, speakers, current.media.duration
-            )
-            proposed_names, name_review_warnings = _reconcile_speaker_names(
-                current.speaker_names, current.speakers, speakers
-            )
-            findings.extend(
-                ValidationFinding(
-                    code="speaker_name_review",
-                    message=warning,
-                    severity=Severity.WARNING,
-                )
-                for warning in name_review_warnings
-            )
-            findings.extend(
-                ValidationFinding(
-                    code=code,
-                    message=f"Optional automatic feature skipped: {message}",
-                    severity=Severity.WARNING,
-                )
-                for code, message in analyzer.warnings
-            )
-            job.result = {
-                "type": "speaker_proposal",
-                "base_updated_at": base_updated_at,
-                "expected_speaker_count": request.expected_speaker_count,
-                "detected_count": len({turn.speaker for turn in speakers}),
-                "speakers": [turn.model_dump(mode="json") for turn in speakers],
-                "words": [word.model_dump(mode="json") for word in current.words],
+            result = segment_words_by_speaker(project.words, turns, project.cues)
+            payload = {
+                "detected_count": fusion.final_speaker_count,
+                "turns": [turn.model_dump(mode="json") for turn in turns],
                 "face_tracks": [track.model_dump(mode="json") for track in face_tracks],
-                "visual_speaker_status": visual_status,
-                "speaker_engine": "sface_ecapa_v1",
-                "fusion_summary": fusion_summary.model_dump(mode="json"),
-                "speaker_names": proposed_names,
-                "name_review_warnings": name_review_warnings,
-                "evidence_temp": evidence_temp.name if evidence_temp.is_file() else None,
-                "cues": [cue.model_dump(mode="json") for cue in cues],
-                "findings": [finding.model_dump(mode="json") for finding in findings],
-                "change_summary": change_summary,
+                "fusion_summary": fusion.model_dump(mode="json"),
+                "cues": [cue.model_dump(mode="json") for cue in result.cues],
+                "change_summary": result.change_summary,
+                "name_review_warnings": result.name_review_warnings,
             }
-            progress("Review speaker changes", 95, "A non-destructive preview is ready")
+            result_path = project_dir / f"speaker-proposal-{_job.id}.json"
+            result_path.write_text(json.dumps(payload), encoding="utf-8")
 
         return jobs.start(project_id, "speaker-reanalysis", target)
+
+    @app.get("/api/projects/{project_id}/speaker-proposals/{job_id}")
+    def speaker_proposal(project_id: str, job_id: str) -> Any:
+        _get_project(store, project_id)
+        path = store.project_dir(project_id) / f"speaker-proposal-{safe_filename(job_id)}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Speaker proposal not ready")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @app.post("/api/projects/{project_id}/speaker-proposals/{job_id}/apply")
     def apply_speaker_proposal(project_id: str, job_id: str) -> Project:
         project = _get_project(store, project_id)
-        try:
-            job = jobs.get(project_id, job_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Speaker proposal not found") from exc
-        result = job.result or {}
-        if job.state != JobState.COMPLETED or result.get("type") != "speaker_proposal":
-            raise HTTPException(status_code=400, detail="Speaker proposal is not ready")
-        if project.updated_at.isoformat() != result.get("base_updated_at"):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "speaker_proposal_stale",
-                    "message": (
-                        "Captions changed after speaker analysis began. "
-                        "Run Re-detect speakers again."
-                    ),
-                },
-            )
-        project.expected_speaker_count = result.get("expected_speaker_count")
-        project.speakers = [SpeakerTurn.model_validate(item) for item in result["speakers"]]
-        if result.get("words"):
-            project.words = [WordToken.model_validate(item) for item in result["words"]]
-        project.face_tracks = result.get("face_tracks", [])
-        project.visual_speaker_status = result.get("visual_speaker_status", "not_analyzed")
-        project.speaker_engine = result.get("speaker_engine", "sface_ecapa_v1")
-        project.fusion_summary = FusionSummary.model_validate(
-            result.get("fusion_summary", {})
-        )
-        project.speaker_names = result.get("speaker_names", {})
-        project.cues = [CaptionCue.model_validate(item) for item in result["cues"]]
-        project.findings = [
-            ValidationFinding.model_validate(item) for item in result["findings"]
+        path = store.project_dir(project_id) / f"speaker-proposal-{safe_filename(job_id)}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Speaker proposal not ready")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        previous_names = dict(project.speaker_names)
+        project.speakers = [SpeakerTurn.model_validate(item) for item in payload["turns"]]
+        project.face_tracks = [
+            _face_track_from_payload(item) for item in payload.get("face_tracks", [])
         ]
-        evidence_name = result.get("evidence_temp")
-        if evidence_name:
-            source = store.project_dir(project_id) / safe_filename(evidence_name)
-            if source.is_file():
-                source.replace(store.project_dir(project_id) / "speaker-evidence.json")
-        return store.save(project)
+        project.fusion_summary = FusionSummary.model_validate(payload.get("fusion_summary", {}))
+        project.cues = [CaptionCue.model_validate(item) for item in payload["cues"]]
+        project.expected_speaker_count = project.fusion_summary.final_speaker_count or None
+        project.speaker_engine = "ecapa_sface_v1"
+        project.visual_speaker_status = "complete"
+        project.speaker_names = {
+            speaker: display
+            for speaker, display in previous_names.items()
+            if any(cue.speaker == speaker for cue in project.cues)
+        }
+        project.findings = validate_cues(project.cues, project.media.duration if project.media else None)
+        store.save(project)
+        path.unlink(missing_ok=True)
+        return project
 
     @app.post("/api/projects/{project_id}/repair-transcript", status_code=202)
-    def repair_transcript(project_id: str) -> Any:
+    def repair_transcript(project_id: str) -> AnalysisJob:
         project = _get_project(store, project_id)
-        if not project.media or not project.words:
+        if not project.media:
+            raise HTTPException(status_code=400, detail="Media is not ready for transcript repair")
+        if not project.words:
             raise HTTPException(
                 status_code=400,
                 detail="Run automatic caption analysis before improving the transcript",
             )
-        base_updated_at = project.updated_at.isoformat()
 
-        def target(job: Any, progress: Callable[[str, int, str], None]) -> None:
-            current = store.get(project_id)
+        def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
             project_dir = store.project_dir(project_id)
             audio = project_dir / "analysis.wav"
             if not audio.is_file():
-                progress("Preparing audio", 5, "Extracting the local analysis track")
-                extract_audio(project_dir / current.media.stored_name, audio, progress)
-            cuts: list[float] = []
-            evidence_path = project_dir / "speaker-evidence.json"
-            if evidence_path.is_file():
-                try:
-                    cuts = json.loads(evidence_path.read_text(encoding="utf-8")).get(
-                        "camera_cuts", []
-                    )
-                except (OSError, ValueError):
-                    cuts = []
-            analyzer = LocalAnalyzer(store.models_dir, current.transcription_quality)
-            recovered_words, recovery_summary = analyzer.recover_transcription(
-                audio, current.words, progress, cuts
-            )
-            progress("Comparing voices", 58, "Refreshing voices for recovered dialogue")
-            speakers = analyzer.diarize(
+                extract_audio(project_dir / project.media.stored_name, audio)
+            analyzer = LocalAnalyzer(project_dir, model_cache_dir=store.models_dir)
+            progress("Checking transcript", 5, "Finding speech regions that need a second pass")
+            proposal = analyzer.transcript_repair_proposal(
                 audio,
-                recovered_words,
-                progress,
-                current.expected_speaker_count,
+                project.words,
+                project.cues,
+                project.speakers,
+                progress=progress,
             )
-            face_tracks = current.face_tracks
-            visual_status = current.visual_speaker_status
-            fusion_summary = FusionSummary(
-                voice_cluster_count=getattr(analyzer, "voice_cluster_count", 0),
-                final_speaker_count=len({turn.speaker for turn in speakers}),
-            )
-            evidence_temp = project_dir / f"transcript-evidence-{job.id}.json"
-            if current.media.has_video and speakers:
-                try:
-                    speakers, face_tracks, visual_status, fusion_summary = (
-                        analyze_active_speakers(
-                            project_dir / current.media.stored_name,
-                            audio,
-                            store.models_dir,
-                            evidence_temp,
-                            speakers,
-                            progress,
-                            current.expected_speaker_count,
-                            getattr(analyzer, "voice_cluster_count", None),
-                            recovered_words,
-                        )
-                    )
-                except StudioError as exc:
-                    visual_status = "audio_fallback"
-                    analyzer.warnings.append((exc.code, exc.message))
-            generated = segment_words_by_speaker(recovered_words, speakers)
-            proposed_cues, conflicts = _build_transcript_proposal(
-                current,
-                generated,
-                recovery_summary.get("regions", []),
-                speakers,
-            )
-            findings = _findings_with_speaker_uncertainty(
-                proposed_cues, speakers, current.media.duration
-            )
-            findings.extend(
-                ValidationFinding(
-                    code="transcript_edit_conflict",
-                    message=(
-                        "An edited caption overlaps recovered dialogue and was preserved. "
-                        "Review it before applying."
-                    ),
-                    severity=Severity.WARNING,
-                    cue_id=cue_id,
-                )
-                for cue_id in conflicts
-            )
-            job.result = {
-                "type": "transcript_proposal",
-                "base_updated_at": base_updated_at,
-                "words": [word.model_dump(mode="json") for word in recovered_words],
-                "speakers": [turn.model_dump(mode="json") for turn in speakers],
-                "cues": [cue.model_dump(mode="json") for cue in proposed_cues],
-                "findings": [finding.model_dump(mode="json") for finding in findings],
-                "face_tracks": [track.model_dump(mode="json") for track in face_tracks],
-                "visual_speaker_status": visual_status,
-                "speaker_engine": "sface_ecapa_v1",
-                "fusion_summary": fusion_summary.model_dump(mode="json"),
-                "recovery_summary": recovery_summary,
-                "edit_conflicts": conflicts,
-                "evidence_temp": evidence_temp.name if evidence_temp.is_file() else None,
+            payload = {
+                "words": [word.model_dump(mode="json") for word in proposal.words],
+                "cues": [cue.model_dump(mode="json") for cue in proposal.cues],
+                "recovery_summary": proposal.recovery_summary,
+                "edit_conflicts": proposal.edit_conflicts,
             }
-            progress("Review recovered dialogue", 96, "A non-destructive preview is ready")
+            result_path = project_dir / f"transcript-proposal-{_job.id}.json"
+            result_path.write_text(json.dumps(payload), encoding="utf-8")
 
         return jobs.start(project_id, "transcript-repair", target)
+
+    @app.get("/api/projects/{project_id}/transcript-proposals/{job_id}")
+    def transcript_proposal(project_id: str, job_id: str) -> Any:
+        _get_project(store, project_id)
+        path = store.project_dir(project_id) / f"transcript-proposal-{safe_filename(job_id)}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Transcript proposal not ready")
+        return json.loads(path.read_text(encoding="utf-8"))
 
     @app.post("/api/projects/{project_id}/transcript-proposals/{job_id}/apply")
     def apply_transcript_proposal(project_id: str, job_id: str) -> Project:
         project = _get_project(store, project_id)
-        try:
-            job = jobs.get(project_id, job_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Transcript proposal not found") from exc
-        result = job.result or {}
-        if job.state != JobState.COMPLETED or result.get("type") != "transcript_proposal":
-            raise HTTPException(status_code=400, detail="Transcript proposal is not ready")
-        if project.updated_at.isoformat() != result.get("base_updated_at"):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "transcript_proposal_stale",
-                    "message": (
-                        "Captions changed after transcript recovery began. "
-                        "Run Improve transcription again."
-                    ),
-                },
-            )
-        project.words = [WordToken.model_validate(item) for item in result["words"]]
-        project.speakers = [SpeakerTurn.model_validate(item) for item in result["speakers"]]
-        project.cues = [CaptionCue.model_validate(item) for item in result["cues"]]
-        project.findings = [
-            ValidationFinding.model_validate(item) for item in result["findings"]
-        ]
-        project.face_tracks = result.get("face_tracks", [])
-        project.visual_speaker_status = result.get("visual_speaker_status", "not_analyzed")
-        project.speaker_engine = result.get("speaker_engine", "sface_ecapa_v1")
-        project.fusion_summary = FusionSummary.model_validate(
-            result.get("fusion_summary", {})
-        )
-        evidence_name = result.get("evidence_temp")
-        if evidence_name:
-            source = store.project_dir(project_id) / safe_filename(evidence_name)
-            if source.is_file():
-                source.replace(store.project_dir(project_id) / "speaker-evidence.json")
-        return store.save(project)
+        path = store.project_dir(project_id) / f"transcript-proposal-{safe_filename(job_id)}.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Transcript proposal not ready")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        project.words = [WordToken.model_validate(item) for item in payload["words"]]
+        project.cues = [CaptionCue.model_validate(item) for item in payload["cues"]]
+        project.findings = validate_cues(project.cues, project.media.duration if project.media else None)
+        store.save(project)
+        path.unlink(missing_ok=True)
+        return project
 
     @app.post("/api/projects/{project_id}/validate")
     def validate_project(project_id: str) -> Project:
         project = _get_project(store, project_id)
-        project.findings = validate_cues(
-            project.cues, project.media.duration if project.media else None
-        )
+        project.findings = validate_cues(project.cues, project.media.duration if project.media else None)
         return store.save(project)
 
     @app.get("/api/projects/{project_id}/media")
-    def project_media(project_id: str) -> FileResponse:
+    def media_file(project_id: str) -> FileResponse:
         project = _get_project(store, project_id)
         if not project.media:
-            raise HTTPException(status_code=404, detail="Media is not ready")
-        path = store.project_dir(project_id) / project.media.stored_name
+            raise HTTPException(status_code=404, detail="Project has no media yet")
         return FileResponse(
-            path, media_type=project.media.content_type or mimetypes.guess_type(path)[0]
+            store.project_dir(project_id) / project.media.stored_name,
+            media_type=project.media.content_type or mimetypes.guess_type(project.media.filename)[0],
         )
 
-    @app.get("/api/projects/{project_id}/speaker-evidence")
-    def speaker_evidence(project_id: str, start: float = 0, end: float = 30) -> dict[str, Any]:
-        _get_project(store, project_id)
-        if start < 0 or end <= start or end - start > 60:
-            raise HTTPException(status_code=400, detail="Request a valid interval up to 60 seconds")
-        path = store.project_dir(project_id) / "speaker-evidence.json"
-        if not path.is_file():
-            return {"tracks": []}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {"tracks": []}
-        return {
-            "tracks": [
-                {
-                    "id": track.get("id"),
-                    "speaker": track.get("speaker"),
-                    "samples": [
-                        sample
-                        for sample in track.get("samples", [])
-                        if start <= float(sample.get("time", -1)) <= end
-                    ],
-                }
-                for track in payload.get("tracks", [])
-                if any(start <= float(s.get("time", -1)) <= end for s in track.get("samples", []))
-            ]
-        }
-
     @app.get("/api/projects/{project_id}/jobs/{job_id}")
-    def get_job(project_id: str, job_id: str) -> Any:
+    def get_job(project_id: str, job_id: str) -> AnalysisJob:
         try:
-            return jobs.get(project_id, job_id)
+            job = jobs.get(project_id, job_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
+        return job
 
-    @app.post("/api/projects/{project_id}/jobs/{job_id}/cancel")
-    def cancel_job(project_id: str, job_id: str) -> Any:
+    @app.post("/api/projects/{project_id}/jobs/{job_id}/cancel", status_code=202)
+    def cancel_job(project_id: str, job_id: str) -> AnalysisJob:
         try:
             return jobs.cancel(project_id, job_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
 
-    @app.post("/api/projects/{project_id}/exports/{format_name}", status_code=201)
-    def create_export(project_id: str, format_name: str) -> ExportArtifact | Any:
-        project = _get_project(store, project_id)
-        if not project.cues:
-            raise HTTPException(status_code=400, detail="Add captions before exporting")
-        if format_name in {"srt", "vtt", "html"}:
-            artifact = export_text(project, store.project_dir(project_id), format_name)
-            project.exports = [item for item in project.exports if item.format != format_name]
-            project.exports.append(artifact)
-            store.save(project)
-            return artifact
-        if format_name != "mp4":
-            raise HTTPException(status_code=400, detail="Unsupported export format")
-
-        def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
-            progress("Preparing video", 5, "Starting the captioned-video renderer")
-            current = store.get(project_id)
-
-            def render_progress(percent: int, elapsed: float) -> None:
-                total = current.media.duration if current.media else 0
-                job_percent = min(97, max(2, percent))
-                progress(
-                    "Rendering captioned video",
-                    job_percent,
-                    f"{percent}% encoded · {_clock(elapsed)} of {_clock(total)}",
-                )
-
-            artifact = export_captioned_mp4(
-                current,
-                store.project_dir(project_id),
-                progress=render_progress,
-                job_context=progress,
-            )
-            current.exports = [item for item in current.exports if item.format != "mp4"]
-            current.exports.append(artifact)
-            store.save(current)
-            progress("Finalizing", 99, "Saving the finished captioned video")
-
-        job = jobs.start(project_id, "mp4-export", target)
-        project.latest_job_id = job.id
-        store.save(project)
-        return job
-
     @app.get("/api/projects/{project_id}/exports/{filename}")
-    def download_export(project_id: str, filename: str) -> FileResponse:
+    def get_export(project_id: str, filename: str) -> FileResponse:
         project = _get_project(store, project_id)
-        safe = safe_filename(filename)
-        if not any(item.filename == safe for item in project.exports):
+        artifact = next((item for item in project.exports if item.filename == filename), None)
+        if not artifact:
             raise HTTPException(status_code=404, detail="Export not found")
-        path = store.project_dir(project_id) / "exports" / safe
-        return FileResponse(
-            path,
-            filename=safe,
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
+        return FileResponse(store.project_dir(project_id) / "exports" / artifact.filename)
+
+    @app.post("/api/projects/{project_id}/exports/{format_name}", status_code=201)
+    def create_export(project_id: str, format_name: str) -> Any:
+        project = _get_project(store, project_id)
+        if format_name == "mp4":
+            if not project.media or not project.media.has_video:
+                raise HTTPException(status_code=400, detail="MP4 export needs video")
+            return _start_mp4_export(project_id, store, jobs)
+        try:
+            artifact = export_text(project, store.project_dir(project_id), format_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Unsupported export format") from exc
+        project.exports.append(artifact)
+        return store.save(project)
 
     @app.get("/api/storage")
     def storage_summary() -> Any:
@@ -900,386 +620,83 @@ def create_app(storage_root: Path | None = None) -> FastAPI:
     return app
 
 
-def _start_analysis(project_id: str, store: ProjectStore, jobs: JobManager) -> Any:
-    def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
-        _analysis_task(project_id, store, progress)
+def _analysis_task(
+    project_id: str,
+    store: ProjectStore,
+    progress: Callable[[str, int, str], None],
+    _job_context: Any | None = None,
+) -> None:
+    project = store.get(project_id)
+    if not project.media:
+        raise StudioError("missing_media", "Project media is not ready.")
+    project_dir = store.project_dir(project.id)
+    audio = project_dir / "analysis.wav"
+    progress("Preparing audio", 5, "Extracting a private local audio track")
+    extract_audio(project_dir / project.media.stored_name, audio, _job_context)
+    analyzer = LocalAnalyzer(project_dir, model_cache_dir=store.models_dir)
+    progress("Analyzing", 10, "Running local speech, speaker, face, and sound models")
+    project = analyzer.analyze(project, audio, progress, _job_context)
+    project.findings = validate_cues(project.cues, project.media.duration)
+    store.save(project)
 
-    job = jobs.start(project_id, "analysis", target)
+
+def _start_analysis(project_id: str, store: ProjectStore, jobs: JobManager) -> AnalysisJob:
+    job = jobs.start(
+        project_id,
+        "analysis",
+        lambda _job, progress: _analysis_task(project_id, store, progress, _job),
+    )
     project = store.get(project_id)
     project.latest_job_id = job.id
     store.save(project)
     return job
 
 
-def _analysis_task(
-    project_id: str,
-    store: ProjectStore,
-    progress: Callable[[str, int, str], None],
-) -> None:
+def _start_mp4_export(project_id: str, store: ProjectStore, jobs: JobManager) -> AnalysisJob:
+    def target(_job: Any, progress: Callable[[str, int, str], None]) -> None:
+        project = store.get(project_id)
+        duration = max(project.media.duration if project.media else 0, 0.001)
+
+        def render_progress(percent: int, _elapsed: float) -> None:
+            progress(
+                "Rendering video",
+                max(1, min(99, percent)),
+                f"Rendering captioned video · {percent}%",
+            )
+
+        progress("Preparing video", 1, "Preparing caption style and video frames")
+        artifact = export_captioned_mp4(
+            project,
+            store.project_dir(project_id),
+            render_progress,
+            _job,
+        )
+        current = store.get(project_id)
+        current.exports.append(artifact)
+        store.save(current)
+        progress("Complete", 100, f"Rendered {duration:.1f} seconds of video")
+
+    job = jobs.start(project_id, "mp4-export", target)
     project = store.get(project_id)
-    if not project.media:
-        raise StudioError("media_not_ready", "Media is not ready for analysis.")
-    project_dir = store.project_dir(project_id)
-    source = project_dir / project.media.stored_name
-    audio = project_dir / "analysis.wav"
-    progress("Preparing audio", 10, "Extracting a private local analysis track")
-    if not audio.is_file():
-        extract_audio(source, audio, progress)
-    analyzer = LocalAnalyzer(store.models_dir, project.transcription_quality)
-    words, speakers, sounds, cues = analyzer.analyze(
-        audio, progress, project.expected_speaker_count
-    )
-    if speakers and not getattr(analyzer, "voice_cluster_count", 0):
-        analyzer.voice_cluster_count = len({turn.speaker for turn in speakers})
-    face_tracks = []
-    visual_status = "not_applicable"
-    fusion_summary = FusionSummary(
-        voice_cluster_count=getattr(analyzer, "voice_cluster_count", 0),
-        final_speaker_count=len({turn.speaker for turn in speakers}),
-    )
-    evidence_temp = project_dir / "speaker-evidence.pending.json"
-    visual_input = speakers or _provisional_speech_turns(words)
-    if project.media.has_video and visual_input:
-        try:
-            speakers, face_tracks, visual_status, fusion_summary = analyze_active_speakers(
-                source,
-                audio,
-                store.models_dir,
-                evidence_temp,
-                visual_input,
-                progress,
-                project.expected_speaker_count,
-                getattr(analyzer, "voice_cluster_count", None),
-                words,
-            )
-            speech_cues = segment_words_by_speaker(words, speakers)
-            sound_cues = analyzer.sound_cues(sounds, speech_cues)
-            cues = sorted(
-                [*speech_cues, *sound_cues],
-                key=lambda cue: (cue.start, cue.end, cue.source == SourceType.SOUND),
-            )
-            evidence_temp.replace(project_dir / "speaker-evidence.json")
-        except StudioError as exc:
-            evidence_temp.unlink(missing_ok=True)
-            visual_status = "audio_fallback"
-            analyzer.warnings.append((exc.code, exc.message))
-    if not getattr(analyzer, "voice_cluster_count", 0) and not (
-        fusion_summary.face_identity_count
-    ):
-        speakers = []
-        speech_cues = segment_words_by_speaker(words, speakers)
-        sound_cues = analyzer.sound_cues(sounds, speech_cues)
-        cues = sorted(
-            [*speech_cues, *sound_cues],
-            key=lambda cue: (cue.start, cue.end, cue.source == SourceType.SOUND),
-        )
-    project = store.get(project_id)
-    project.words = words
-    project.speakers = speakers
-    project.face_tracks = face_tracks
-    project.visual_speaker_status = visual_status
-    project.speaker_engine = "sface_ecapa_v1"
-    project.fusion_summary = fusion_summary
-    project.sounds = sounds
-    project.cues = cues
-    project.findings = validate_cues(cues, project.media.duration)
-    uncertain_cues: set[str] = set()
-    for turn in speakers:
-        if turn.confidence is None or turn.confidence >= 0.65:
-            continue
-        cue = max(
-            cues,
-            key=lambda item: max(0.0, min(item.end, turn.end) - max(item.start, turn.start)),
-            default=None,
-        )
-        if cue and cue.id not in uncertain_cues:
-            uncertain_cues.add(cue.id)
-            project.findings.append(
-                ValidationFinding(
-                    code="uncertain_speaker",
-                    message="The anonymous speaker label is uncertain; listen and verify it.",
-                    severity=Severity.INFO,
-                    cue_id=cue.id,
-                )
-            )
-    for previous, current in zip(speakers, speakers[1:], strict=False):
-        shared = min(previous.end, current.end) - max(previous.start, current.start)
-        if previous.speaker != current.speaker and shared >= 0.15:
-            cue = next(
-                (
-                    item
-                    for item in cues
-                    if item.start < min(previous.end, current.end)
-                    and item.end > max(previous.start, current.start)
-                ),
-                None,
-            )
-            project.findings.append(
-                ValidationFinding(
-                    code="possible_overlapping_speech",
-                    message=(
-                        "Two voices may overlap here. Use Analyze overlapping voices "
-                        "if both need separate lines."
-                    ),
-                    severity=Severity.INFO,
-                    cue_id=cue.id if cue else None,
-                )
-            )
-    project.findings.extend(
-        ValidationFinding(
-            code=code,
-            message=f"Optional automatic feature skipped: {message}",
-            severity=Severity.WARNING,
-        )
-        for code, message in analyzer.warnings
-    )
+    project.latest_job_id = job.id
     store.save(project)
-    progress("Saving", 95, "Saving captions and accessibility findings")
+    return job
 
 
-def _normalized_caption_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip().casefold()
+def _face_track_from_payload(item: dict[str, Any]) -> Any:
+    from .models import FaceTrackSummary
+
+    return FaceTrackSummary.model_validate(item)
 
 
-def _build_speaker_proposal(
-    project: Project, speakers: list[SpeakerTurn]
-) -> tuple[list[CaptionCue], dict[str, int]]:
-    """Apply speaker evidence to copies of cues without overwriting edited caption text."""
-
-    proposed: list[CaptionCue] = []
-    splits = 0
-    original_speakers = {cue.id: cue.speaker for cue in project.cues}
-    for cue in project.cues:
-        copied = cue.model_copy(deep=True)
-        if cue.source == SourceType.SOUND or cue.overlap_group_id:
-            proposed.append(copied)
-            continue
-        words = [
-            word
-            for word in project.words
-            if cue.start <= (word.start + word.end) / 2 <= cue.end
-        ]
-        parts = segment_words_by_speaker(words, speakers) if words else []
-        automatic_text_matches = (
-            cue.source == SourceType.TRANSCRIPTION
-            and parts
-            and _normalized_caption_text(" ".join(part.text for part in parts))
-            == _normalized_caption_text(cue.text)
-        )
-        if automatic_text_matches and len(parts) > 1:
-            splits += len(parts) - 1
-            for index, part in enumerate(parts):
-                replacement = copied.model_copy(deep=True)
-                if index:
-                    replacement.id = part.id
-                replacement.start = cue.start if index == 0 else part.start
-                replacement.end = cue.end if index == len(parts) - 1 else part.end
-                replacement.text = part.text
-                replacement.speaker = part.speaker
-                if replacement.confidence is not None and part.confidence is not None:
-                    replacement.confidence = min(replacement.confidence, part.confidence)
-                proposed.append(replacement)
-        else:
-            copied.speaker, speaker_confidence = speaker_for_interval(
-                cue.start, cue.end, speakers
-            )
-            if copied.confidence is not None and speaker_confidence is not None:
-                copied.confidence = min(copied.confidence, speaker_confidence)
-            proposed.append(copied)
-
-    joined: list[CaptionCue] = []
-    joins = 0
-    for cue in proposed:
-        previous = joined[-1] if joined else None
-        can_join = bool(
-            previous
-            and previous.source == SourceType.TRANSCRIPTION
-            and cue.source == SourceType.TRANSCRIPTION
-            and not previous.overlap_group_id
-            and not cue.overlap_group_id
-            and previous.speaker == cue.speaker
-            and cue.start - previous.end <= 0.05
-            and original_speakers.get(previous.id) != original_speakers.get(cue.id)
-            and not re.search(r"[.!?][\"']?$", previous.text.strip())
-            and cue.end - previous.start <= 7.0
-            and len(f"{previous.text} {cue.text}") <= 84
-        )
-        if can_join and previous:
-            previous.end = cue.end
-            previous.text = f"{previous.text} {cue.text}".strip()
-            if previous.confidence is not None and cue.confidence is not None:
-                previous.confidence = min(previous.confidence, cue.confidence)
-            joins += 1
-        else:
-            joined.append(cue)
-
-    label_changes = sum(
-        1
-        for cue in joined
-        if cue.id in original_speakers and cue.speaker != original_speakers[cue.id]
-    )
-    uncertain = sum(
-        1 for turn in speakers if turn.confidence is None or turn.confidence < 0.65
-    )
-    return joined, {
-        "label_changes": label_changes,
-        "joins": joins,
-        "splits": splits,
-        "uncertain_samples": uncertain,
-    }
+def _json_default(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    raise TypeError
 
 
-def _findings_with_speaker_uncertainty(
-    cues: list[CaptionCue], speakers: list[SpeakerTurn], duration: float | None
-) -> list[ValidationFinding]:
-    findings = validate_cues(cues, duration)
-    reported: set[str] = set()
-    for turn in speakers:
-        if turn.confidence is not None and turn.confidence >= 0.65:
-            continue
-        cue = max(
-            cues,
-            key=lambda item: max(0.0, min(item.end, turn.end) - max(item.start, turn.start)),
-            default=None,
-        )
-        if cue and cue.id not in reported:
-            reported.add(cue.id)
-            findings.append(
-                ValidationFinding(
-                    code="uncertain_speaker",
-                    message="The anonymous speaker label is uncertain; listen and verify it.",
-                    severity=Severity.INFO,
-                    cue_id=cue.id,
-                )
-            )
-    return findings
-
-
-def _overlaps_regions(
-    start: float, end: float, regions: list[tuple[float, float]] | list[list[float]]
-) -> bool:
-    return any(start < region_end and end > region_start for region_start, region_end in regions)
-
-
-def _cue_matches_saved_words(cue: CaptionCue, words: list[WordToken]) -> bool:
-    text = " ".join(
-        word.text
-        for word in words
-        if cue.start <= (word.start + word.end) / 2 <= cue.end
-    )
-    return _normalized_caption_text(text) == _normalized_caption_text(cue.text)
-
-
-def _build_transcript_proposal(
-    project: Project,
-    generated: list[CaptionCue],
-    regions: list[tuple[float, float]] | list[list[float]],
-    speakers: list[SpeakerTurn],
-) -> tuple[list[CaptionCue], list[str]]:
-    """Replace only automatic captions in recovery regions and preserve user edits."""
-
-    retained: list[CaptionCue] = []
-    conflicts: list[str] = []
-    replaced: list[CaptionCue] = []
-    for cue in project.cues:
-        affected = _overlaps_regions(cue.start, cue.end, regions)
-        edited = cue.source == SourceType.TRANSCRIPTION and not _cue_matches_saved_words(
-            cue, project.words
-        )
-        if cue.source != SourceType.TRANSCRIPTION or not affected or edited:
-            copied = cue.model_copy(deep=True)
-            if cue.source == SourceType.TRANSCRIPTION:
-                copied.speaker, _confidence = speaker_for_interval(
-                    copied.start, copied.end, speakers
-                )
-            retained.append(copied)
-            if affected and edited:
-                conflicts.append(cue.id)
-        else:
-            replaced.append(cue)
-
-    additions = [
-        cue.model_copy(deep=True)
-        for cue in generated
-        if _overlaps_regions(cue.start, cue.end, regions)
-        and not any(
-            conflict.start < cue.end and conflict.end > cue.start
-            for conflict in retained
-            if conflict.id in conflicts
-        )
-    ]
-    available_ids = [cue.id for cue in replaced]
-    for cue, cue_id in zip(additions, available_ids, strict=False):
-        cue.id = cue_id
-    return sorted(
-        [*retained, *additions],
-        key=lambda cue: (cue.start, cue.end, cue.source == SourceType.SOUND),
-    ), conflicts
-
-
-def _provisional_speech_turns(words: list[Any]) -> list[SpeakerTurn]:
-    """Provide speech timing to the face worker without claiming a voice identity."""
-
-    return [
-        SpeakerTurn(
-            speaker="Speaker 1",
-            start=start,
-            end=end,
-            confidence=None,
-            audio_confidence=None,
-            method="uncertain",
-        )
-        for start, end in LocalAnalyzer._speaker_windows(words)
-    ]
-
-
-def _reconcile_speaker_names(
-    names: dict[str, str],
-    previous: list[SpeakerTurn],
-    proposed: list[SpeakerTurn],
-) -> tuple[dict[str, str], list[str]]:
-    """Carry display names only across a strong temporal speaker match."""
-
-    if not names:
-        return {}, []
-    reconciled: dict[str, str] = {}
-    warnings: list[str] = []
-    claimed: set[str] = set()
-    for old_speaker, display_name in names.items():
-        old_turns = [turn for turn in previous if turn.speaker == old_speaker]
-        total = sum(max(0.0, turn.end - turn.start) for turn in old_turns)
-        overlap: dict[str, float] = {}
-        for old_turn in old_turns:
-            for new_turn in proposed:
-                shared = max(
-                    0.0,
-                    min(old_turn.end, new_turn.end) - max(old_turn.start, new_turn.start),
-                )
-                if shared:
-                    overlap[new_turn.speaker] = overlap.get(new_turn.speaker, 0.0) + shared
-        best = max(overlap, key=overlap.get) if overlap else None
-        ratio = overlap.get(best, 0.0) / total if best and total else 0.0
-        if best and ratio >= 0.65 and best not in claimed:
-            reconciled[best] = display_name
-            claimed.add(best)
-        else:
-            warnings.append(
-                f'The display name "{display_name}" was not carried forward because '
-                "its new anonymous speaker match is uncertain. Review and rename it after applying."
-            )
-    return reconciled, warnings
-
-
-async def _save_upload(upload: UploadFile, destination: Path) -> None:
-    partial = destination.with_suffix(destination.suffix + ".partial")
-    try:
-        with partial.open("wb") as handle:
-            while chunk := await upload.read(1024 * 1024):
-                handle.write(chunk)
-        partial.replace(destination)
-    finally:
-        partial.unlink(missing_ok=True)
-        await upload.close()
+def _asset_text(name: str) -> str:
+    return files("accessible_caption_studio.web").joinpath(name).read_text(encoding="utf-8")
 
 
 def _get_project(store: ProjectStore, project_id: str) -> Project:
@@ -1289,19 +706,13 @@ def _get_project(store: ProjectStore, project_id: str) -> Project:
         raise HTTPException(status_code=404, detail="Project not found") from exc
 
 
-def _asset_text(name: str) -> str:
-    return files("accessible_caption_studio").joinpath("web", name).read_text(encoding="utf-8")
-
-
 def _json_string(value: str) -> str:
-    import json
-
     return json.dumps(value)
 
 
-def _clock(seconds: float) -> str:
-    seconds = max(0, round(seconds))
-    return f"{seconds // 60}:{seconds % 60:02d}"
-
-
-app = create_app()
+async def _save_upload(upload: UploadFile, destination: Path) -> None:
+    temporary = destination.with_suffix(destination.suffix + ".partial")
+    with temporary.open("wb") as handle:
+        while chunk := await upload.read(1024 * 1024):
+            handle.write(chunk)
+    temporary.replace(destination)
