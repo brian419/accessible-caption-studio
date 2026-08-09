@@ -429,3 +429,62 @@ def test_caption_localization_is_modal_and_preserves_timeline_height(page: Page,
     assert dialog.evaluate("element => element.scrollWidth <= element.clientWidth + 1")
     assert dialog.locator("#captionLocalizationBody").evaluate("element => element.scrollWidth <= element.clientWidth + 1")
 
+
+
+
+def test_backup_button_shows_preparing_state_until_archive_is_ready(page: Page, studio_url: str) -> None:
+    _open(page, studio_url)
+    page.evaluate(
+        """() => {
+          state.project = { id: 'backup-loading-fixture', name: 'Backup fixture' };
+          const button = document.querySelector('#backupProjectButton');
+          button.disabled = false;
+          window.__backupDownloadName = null;
+          window.__resolveBackup = null;
+          window.fetch = () => new Promise((resolve) => {
+            window.__resolveBackup = () => resolve(new Response(
+              new Blob(['backup-bytes'], { type: 'application/zip' }),
+              {
+                status: 200,
+                headers: { 'Content-Disposition': 'attachment; filename="Backup fixture - backup.acstudio.zip"' },
+              },
+            ));
+          });
+          URL.createObjectURL = () => 'blob:backup-fixture';
+          URL.revokeObjectURL = () => {};
+          HTMLAnchorElement.prototype.click = function clickBackupFixture() {
+            window.__backupDownloadName = this.download;
+          };
+          button.click();
+        }"""
+    )
+
+    button = page.locator('#backupProjectButton')
+    expect(button).to_have_text('Preparing backup…')
+    expect(button).to_be_disabled()
+    expect(button).to_have_attribute('aria-busy', 'true')
+    assert button.evaluate("element => element.classList.contains('is-loading')")
+
+    page.evaluate('window.__resolveBackup()')
+    page.wait_for_function('window.__backupDownloadName !== null')
+    assert page.evaluate('window.__backupDownloadName') == 'Backup fixture - backup.acstudio.zip'
+    expect(button).to_have_text('Backup')
+    expect(button).to_be_enabled()
+    assert button.evaluate("element => element.getAttribute('aria-busy')") is None
+    assert not button.evaluate("element => element.classList.contains('is-loading')")
+
+
+def test_dynamic_project_job_status_has_space_below_note(page: Page, studio_url: str) -> None:
+    _open(page, studio_url)
+    page.locator('body').evaluate(
+        """body => {
+          const status = document.createElement('span');
+          status.id = 'dynamic-job-status-spacing-fixture';
+          status.className = 'project-job-status';
+          status.innerHTML = '<span class="project-job-spinner"></span><span class="project-job-status-text">Translating captions · 47%</span>';
+          body.append(status);
+        }"""
+    )
+    status = page.locator('#dynamic-job-status-spacing-fixture')
+    expect(status).to_be_visible()
+    assert status.evaluate("element => parseFloat(getComputedStyle(element).paddingBottom)") >= 4
