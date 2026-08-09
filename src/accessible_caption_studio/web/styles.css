@@ -1490,3 +1490,103 @@ dialog::backdrop { background: rgba(10,18,42,.58); backdrop-filter: blur(3px); }
   padding-left: .75rem;
   background-image: none;
 }
+
+
+/* major-iterations Batch 2: contextual project workflow tools */
+.project-card { position: relative; }
+.project-card.is-favorite { order: -1; }
+.project-favorite {
+  position: absolute;
+  top: .72rem;
+  right: .72rem;
+  z-index: 2;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: none;
+}
+.project-favorite[aria-pressed="true"] { color: #a66b00; background: color-mix(in srgb, #fff4c2 66%, var(--paper)); }
+.project-favorite:focus-visible { outline: 3px solid color-mix(in srgb, var(--blue) 44%, transparent); outline-offset: 2px; }
+.project-card .project-open { padding-right: 2.35rem !important; }
+.workspace-utility-action { min-height: 34px; padding-inline: .5rem; }
+
+.waveform-timing-panel {
+  display: grid;
+  gap: .5rem;
+  padding: .6rem .65rem .7rem;
+  border-top: 1px solid var(--soft-line);
+}
+.waveform-timing-panel[hidden] { display: none; }
+.waveform-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.waveform-heading > div { display: flex; align-items: baseline; gap: .55rem; min-width: 0; }
+.waveform-heading strong { font-size: .78rem; }
+.waveform-heading span { color: var(--muted); font-size: .7rem; }
+.waveform-help { text-align: right; }
+.waveform-canvas-wrap {
+  position: relative;
+  min-width: 0;
+  height: 92px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, #7f8ca6);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--wash) 58%, var(--paper));
+}
+#waveformCanvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+#waveformCanvas:focus-visible { outline: 3px solid color-mix(in srgb, var(--blue) 38%, transparent); outline-offset: -3px; }
+.cue-placement-button.is-customized { color: var(--blue-dark); background: var(--sky); }
+
+.cue-placement-dialog { width: min(500px, calc(100vw - 2rem)); }
+.cue-placement-card { display: grid; gap: .85rem; }
+.cue-placement-card > label { display: grid; gap: .35rem; }
+.cue-placement-card select,
+.cue-placement-card input { width: 100%; }
+.dialog-action-spacer { flex: 1; }
+
+.revision-history-dialog { width: min(620px, calc(100vw - 2rem)); }
+.revision-history-card { display: grid; gap: .85rem; max-height: min(760px, calc(100vh - 2rem)); }
+.revision-history-list { display: grid; gap: .35rem; overflow-y: auto; min-height: 100px; }
+.revision-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem .75rem;
+  border-radius: 9px;
+  background: var(--wash);
+}
+.revision-row > div { min-width: 0; display: grid; gap: .16rem; }
+.revision-row strong { font-size: .78rem; }
+.revision-row span { color: var(--muted); font-size: .7rem; overflow-wrap: anywhere; }
+.revision-row .secondary { min-height: 34px; padding: .4rem .6rem; }
+.revision-empty { margin: 0; }
+
+@media (hover: hover) and (pointer: fine) {
+  .project-favorite { transition: transform 140ms cubic-bezier(.23,1,.32,1), background-color 140ms ease, color 140ms ease; }
+  .project-favorite:hover { color: #a66b00; background: color-mix(in srgb, #fff4c2 48%, var(--paper)); }
+  .project-favorite:active { transform: scale(.96); }
+}
+
+@media (max-width: 700px) {
+  .waveform-heading { align-items: flex-start; flex-direction: column; gap: .25rem; }
+  .waveform-heading > div { align-items: flex-start; flex-direction: column; gap: .12rem; }
+  .waveform-help { text-align: left; }
+}
+
+@media (max-width: 520px) {
+  .revision-row { grid-template-columns: 1fr; }
+  .revision-row .secondary { width: 100%; }
+  .recent-actions { flex-wrap: wrap; gap: .35rem; }
+}

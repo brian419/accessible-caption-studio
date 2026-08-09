@@ -3359,3 +3359,589 @@ function toast(message, type = "info") {
 
   document.addEventListener("DOMContentLoaded", installJobRecoveryActions);
 })();
+
+
+// major-iterations Batch 2: favorites, backups, history, waveform timing, per-cue placement
+(() => {
+  const batch2 = {
+    waveform: null,
+    waveformProjectId: null,
+    waveformCueId: null,
+    waveformDrag: null,
+    placementCueId: null,
+  };
+
+  const previousRenderProjectsBatch2 = renderProjects;
+  renderProjects = function renderProjectsWithFavorites() {
+    previousRenderProjectsBatch2();
+    document.querySelectorAll(".project-card[data-project-id]").forEach((card) => {
+      const project = state.projects.find((item) => item.id === card.dataset.projectId);
+      if (!project || card.querySelector(".project-favorite")) return;
+      card.classList.toggle("is-favorite", Boolean(project.is_favorite));
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "project-favorite";
+      button.setAttribute("aria-pressed", String(Boolean(project.is_favorite)));
+      button.setAttribute(
+        "aria-label",
+        `${project.is_favorite ? "Remove" : "Add"} ${project.name} ${project.is_favorite ? "from" : "to"} favorites`,
+      );
+      button.title = project.is_favorite ? "Remove from favorites" : "Add to favorites";
+      button.textContent = project.is_favorite ? "★" : "☆";
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const desired = !Boolean(project.is_favorite);
+        button.disabled = true;
+        try {
+          const saved = await api(`/api/projects/${project.id}/favorite`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ favorite: desired }),
+          });
+          const index = state.projects.findIndex((item) => item.id === project.id);
+          if (index >= 0) state.projects[index] = saved;
+          renderProjects();
+        } catch (error) {
+          toast(error.message, "error");
+          button.disabled = false;
+        }
+      });
+      card.append(button);
+    });
+  };
+
+  const previousRenderCuesBatch2 = renderCues;
+  renderCues = function renderCuesWithPlacementAndWaveformSelection() {
+    previousRenderCuesBatch2();
+    state.project?.cues.forEach((cue) => {
+      const row = document.querySelector(`#cue-${CSS.escape(cue.id)}`);
+      if (!row) return;
+      const actions = row.querySelector(".cue-actions");
+      if (actions && !actions.querySelector(".cue-placement-button")) {
+        const button = actionButton("Position", () => openCuePlacement(cue.id));
+        button.classList.add("cue-placement-button");
+        const customized = Boolean(
+          cue.position_override || cue.alignment_override || cue.vertical_margin_percent_override != null
+        );
+        button.classList.toggle("is-customized", customized);
+        button.textContent = customized ? "Position •" : "Position";
+        actions.append(button);
+      }
+      row.addEventListener("focusin", () => selectWaveformCue(cue.id));
+      row.addEventListener("click", () => selectWaveformCue(cue.id));
+    });
+    drawWaveform();
+  };
+
+  const previousRenderProjectBatch2 = renderProject;
+  renderProject = function renderProjectWithBatch2() {
+    const incomingId = state.project?.id || null;
+    if (batch2.waveformProjectId !== incomingId) {
+      batch2.waveform = null;
+      batch2.waveformProjectId = incomingId;
+      batch2.waveformCueId = null;
+    }
+    previousRenderProjectBatch2();
+    updateBatch2Controls();
+  };
+
+  const previousSyncPlaybackBatch2 = syncPlayback;
+  syncPlayback = function syncPlaybackWithCuePlacement(...args) {
+    previousSyncPlaybackBatch2(...args);
+    const cue = activePlacementCue();
+    applyCuePlacement(cue);
+    if (!batch2.waveformCueId && cue) batch2.waveformCueId = cue.id;
+    drawWaveform();
+  };
+
+  function activePlacementCue() {
+    if (!state.project?.cues?.length) return null;
+    const time = activePlayer()?.currentTime ?? 0;
+    return state.project.cues.find((cue) => time >= Number(cue.start) && time <= Number(cue.end)) || null;
+  }
+
+  function applyCuePlacement(cue) {
+    if (!state.project) return;
+    const base = normalizeCaptionStyle(state.project.caption_style);
+    const position = cue?.position_override || base.position;
+    const alignment = cue?.alignment_override || base.alignment;
+    const verticalMarginPercent = cue?.vertical_margin_percent_override ?? base.vertical_margin_percent;
+    const overlay = $("#captionOverlay");
+    const stage = $("#mediaStage");
+    const stageBox = stage.getBoundingClientRect();
+    const videoBox = mediaPlayer.hidden ? stageBox : mediaPlayer.getBoundingClientRect();
+    const videoHeight = Math.max(videoBox.height, 1);
+    const videoWidth = Math.max(videoBox.width, 1);
+    const videoTop = Math.max(0, videoBox.top - stageBox.top);
+    const videoLeft = Math.max(0, videoBox.left - stageBox.left);
+    const horizontalMargin = videoWidth * 0.06;
+    const verticalMargin = videoHeight * verticalMarginPercent / 100;
+    const transforms = [];
+
+    overlay.style.textAlign = alignment;
+    overlay.style.alignItems = ({ left: "flex-start", center: "center", right: "flex-end" })[alignment];
+    overlay.style.top = "auto";
+    overlay.style.bottom = "auto";
+    overlay.style.left = "auto";
+    overlay.style.right = "auto";
+    if (alignment === "left") overlay.style.left = `${videoLeft + horizontalMargin}px`;
+    else if (alignment === "right") {
+      overlay.style.right = `${Math.max(0, stageBox.width - videoLeft - videoWidth + horizontalMargin)}px`;
+    } else {
+      overlay.style.left = `${videoLeft + videoWidth / 2}px`;
+      transforms.push("translateX(-50%)");
+    }
+    if (position === "top") overlay.style.top = `${videoTop + verticalMargin}px`;
+    else if (position === "middle") {
+      overlay.style.top = `${videoTop + videoHeight / 2}px`;
+      transforms.push("translateY(-50%)");
+    } else {
+      overlay.style.bottom = `${Math.max(0, stageBox.height - videoTop - videoHeight + verticalMargin)}px`;
+    }
+    overlay.style.transform = transforms.length ? transforms.join(" ") : "none";
+  }
+
+  function installBatch2ProjectControls() {
+    if ($("#restoreProjectBackup")) return;
+    const recentActions = document.querySelector(".recent-actions");
+    if (recentActions) {
+      const restore = document.createElement("button");
+      restore.id = "restoreProjectBackup";
+      restore.className = "text-button";
+      restore.type = "button";
+      restore.textContent = "Restore backup";
+      const input = document.createElement("input");
+      input.id = "restoreProjectBackupInput";
+      input.type = "file";
+      input.accept = ".zip,.acstudio.zip,application/zip";
+      input.hidden = true;
+      restore.addEventListener("click", () => input.click());
+      input.addEventListener("change", restoreProjectBackup);
+      recentActions.insertBefore(restore, $("#refreshProjects"));
+      recentActions.append(input);
+    }
+
+    const workspaceActions = document.querySelector(".workspace-actions");
+    if (workspaceActions && !$("#backupProjectButton")) {
+      const backup = document.createElement("button");
+      backup.id = "backupProjectButton";
+      backup.className = "text-button workspace-utility-action";
+      backup.type = "button";
+      backup.textContent = "Backup";
+      backup.addEventListener("click", downloadProjectBackup);
+      workspaceActions.insertBefore(backup, $("#exportButton"));
+    }
+  }
+
+  async function restoreProjectBackup(event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    const button = $("#restoreProjectBackup");
+    button.disabled = true;
+    button.textContent = "Restoring…";
+    try {
+      const form = new FormData();
+      form.append("backup", file, file.name);
+      const restored = await api("/api/projects/restore", { method: "POST", body: form });
+      await loadProjects();
+      toast(`Restored “${restored.name}”.`);
+      await openProject(restored.id);
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      input.value = "";
+      button.disabled = false;
+      button.textContent = "Restore backup";
+    }
+  }
+
+  function downloadProjectBackup() {
+    if (!state.project) return;
+    const link = document.createElement("a");
+    link.href = `/api/projects/${state.project.id}/backup`;
+    link.download = "";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+
+  function installBatch2EditorTools() {
+    const primary = document.querySelector(".editor-command-primary");
+    if (primary && !$("#waveformToggle")) {
+      const button = document.createElement("button");
+      button.id = "waveformToggle";
+      button.className = "secondary editor-action editor-command-button";
+      button.type = "button";
+      button.textContent = "Waveform";
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-controls", "waveformTimingPanel");
+      button.addEventListener("click", toggleWaveformPanel);
+      primary.append(button);
+    }
+
+    const more = document.querySelector(".editor-more-popover");
+    if (more && !$("#revisionHistoryButton")) {
+      const history = document.createElement("button");
+      history.id = "revisionHistoryButton";
+      history.className = "secondary editor-action editor-more-action";
+      history.type = "button";
+      history.textContent = "Version history";
+      history.addEventListener("click", openRevisionHistory);
+      more.append(history);
+    }
+
+    const heading = document.querySelector(".editor-heading");
+    if (heading && !$("#waveformTimingPanel")) {
+      const panel = document.createElement("section");
+      panel.id = "waveformTimingPanel";
+      panel.className = "waveform-timing-panel";
+      panel.hidden = true;
+      panel.setAttribute("aria-labelledby", "waveformTimingTitle");
+      panel.innerHTML = `
+        <div class="waveform-heading">
+          <div><strong id="waveformTimingTitle">Waveform timing</strong><span id="waveformStatus">Select a caption to adjust its timing.</span></div>
+          <span class="waveform-help">Drag the start/end handles. Exact In/Out fields remain available in each caption row.</span>
+        </div>
+        <div class="waveform-canvas-wrap">
+          <canvas id="waveformCanvas" tabindex="0" role="img" aria-label="Audio waveform timing editor"></canvas>
+        </div>`;
+      heading.append(panel);
+      const canvas = panel.querySelector("#waveformCanvas");
+      canvas.addEventListener("pointerdown", waveformPointerDown);
+      canvas.addEventListener("pointermove", waveformPointerMove);
+      canvas.addEventListener("pointerup", waveformPointerUp);
+      canvas.addEventListener("pointercancel", waveformPointerUp);
+      if (window.ResizeObserver) new ResizeObserver(drawWaveform).observe(panel.querySelector(".waveform-canvas-wrap"));
+    }
+  }
+
+  async function toggleWaveformPanel() {
+    const panel = $("#waveformTimingPanel");
+    const button = $("#waveformToggle");
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    button.setAttribute("aria-expanded", String(opening));
+    button.setAttribute("aria-pressed", String(opening));
+    if (!opening) return;
+    if (!batch2.waveform || batch2.waveformProjectId !== state.project?.id) {
+      $("#waveformStatus").textContent = "Preparing waveform…";
+      try {
+        batch2.waveform = await api(`/api/projects/${state.project.id}/waveform`);
+        batch2.waveformProjectId = state.project.id;
+      } catch (error) {
+        $("#waveformStatus").textContent = error.message;
+        return;
+      }
+    }
+    if (!batch2.waveformCueId) {
+      batch2.waveformCueId = activePlacementCue()?.id || state.project?.cues?.[0]?.id || null;
+    }
+    drawWaveform();
+  }
+
+  function selectWaveformCue(cueId) {
+    if (!state.project?.cues.some((cue) => cue.id === cueId)) return;
+    batch2.waveformCueId = cueId;
+    drawWaveform();
+  }
+
+  function selectedWaveformCue() {
+    return state.project?.cues.find((cue) => cue.id === batch2.waveformCueId) || null;
+  }
+
+  function waveformWindow(cue) {
+    const duration = Math.max(Number(state.project?.media?.duration || batch2.waveform?.duration || 0), 0.001);
+    if (!cue) return { start: 0, end: Math.min(duration, 12) };
+    const cueDuration = Math.max(0.05, Number(cue.end) - Number(cue.start));
+    const windowLength = Math.min(duration, Math.max(10, cueDuration + 8));
+    let start = Math.max(0, ((Number(cue.start) + Number(cue.end)) / 2) - windowLength / 2);
+    let end = Math.min(duration, start + windowLength);
+    start = Math.max(0, end - windowLength);
+    return { start, end };
+  }
+
+  function waveformGeometry() {
+    const canvas = $("#waveformCanvas");
+    const cue = selectedWaveformCue();
+    if (!canvas || !cue || !batch2.waveform?.samples?.length) return null;
+    const rect = canvas.getBoundingClientRect();
+    const windowRange = waveformWindow(cue);
+    const span = Math.max(0.001, windowRange.end - windowRange.start);
+    const xForTime = (time) => ((Number(time) - windowRange.start) / span) * rect.width;
+    const timeForX = (x) => windowRange.start + (Math.max(0, Math.min(rect.width, x)) / Math.max(rect.width, 1)) * span;
+    return { canvas, cue, rect, windowRange, span, xForTime, timeForX };
+  }
+
+  function drawWaveform() {
+    const panel = $("#waveformTimingPanel");
+    const canvas = $("#waveformCanvas");
+    if (!panel || panel.hidden || !canvas) return;
+    const cue = selectedWaveformCue();
+    const status = $("#waveformStatus");
+    if (!batch2.waveform?.samples?.length) {
+      if (status && status.textContent !== "Preparing waveform…") status.textContent = "Open Waveform to prepare the audio view.";
+      return;
+    }
+    if (!cue) {
+      status.textContent = "Select a caption to adjust its timing.";
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width));
+    const height = Math.max(1, Math.floor(rect.height));
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    const context = canvas.getContext("2d");
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    const computed = getComputedStyle(document.documentElement);
+    const ink = computed.getPropertyValue("--ink").trim() || "#172033";
+    const muted = computed.getPropertyValue("--muted").trim() || "#69758f";
+    const blue = computed.getPropertyValue("--blue").trim() || "#2563eb";
+    const sky = computed.getPropertyValue("--sky").trim() || "#eaf2ff";
+    const range = waveformWindow(cue);
+    const duration = Math.max(Number(batch2.waveform.duration || state.project.media?.duration || 0), 0.001);
+    const samples = batch2.waveform.samples;
+    const startIndex = Math.max(0, Math.floor((range.start / duration) * samples.length));
+    const endIndex = Math.min(samples.length, Math.ceil((range.end / duration) * samples.length));
+    const visible = samples.slice(startIndex, Math.max(startIndex + 1, endIndex));
+    const center = height / 2;
+
+    context.strokeStyle = muted;
+    context.globalAlpha = 0.72;
+    context.lineWidth = 1;
+    context.beginPath();
+    visible.forEach((amplitude, index) => {
+      const x = visible.length <= 1 ? 0 : (index / (visible.length - 1)) * width;
+      const half = Math.max(1, Number(amplitude) * (height * 0.4));
+      context.moveTo(x, center - half);
+      context.lineTo(x, center + half);
+    });
+    context.stroke();
+    context.globalAlpha = 1;
+
+    const span = Math.max(0.001, range.end - range.start);
+    const xForTime = (time) => ((Number(time) - range.start) / span) * width;
+    const startX = xForTime(cue.start);
+    const endX = xForTime(cue.end);
+    context.fillStyle = sky;
+    context.globalAlpha = 0.55;
+    context.fillRect(startX, 0, Math.max(2, endX - startX), height);
+    context.globalAlpha = 1;
+
+    context.strokeStyle = blue;
+    context.lineWidth = 2;
+    [startX, endX].forEach((x) => {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, height);
+      context.stroke();
+      context.fillStyle = blue;
+      context.fillRect(x - 4, 0, 8, 12);
+    });
+
+    const playhead = activePlayer()?.currentTime ?? 0;
+    if (playhead >= range.start && playhead <= range.end) {
+      context.strokeStyle = ink;
+      context.lineWidth = 1;
+      context.beginPath();
+      const playheadX = xForTime(playhead);
+      context.moveTo(playheadX, 0);
+      context.lineTo(playheadX, height);
+      context.stroke();
+    }
+    status.textContent = `${Number(cue.start).toFixed(3)}s – ${Number(cue.end).toFixed(3)}s · ${range.start.toFixed(1)}–${range.end.toFixed(1)}s window`;
+  }
+
+  function waveformPointerDown(event) {
+    const geometry = waveformGeometry();
+    if (!geometry) return;
+    const x = event.clientX - geometry.rect.left;
+    const startX = geometry.xForTime(geometry.cue.start);
+    const endX = geometry.xForTime(geometry.cue.end);
+    const startDistance = Math.abs(x - startX);
+    const endDistance = Math.abs(x - endX);
+    if (Math.min(startDistance, endDistance) <= 14) {
+      remember();
+      batch2.waveformDrag = startDistance <= endDistance ? "start" : "end";
+      geometry.canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    const time = geometry.timeForX(x);
+    const player = activePlayer();
+    if (player?.src) player.currentTime = time;
+    drawWaveform();
+  }
+
+  function waveformPointerMove(event) {
+    if (!batch2.waveformDrag) return;
+    const geometry = waveformGeometry();
+    if (!geometry) return;
+    const time = geometry.timeForX(event.clientX - geometry.rect.left);
+    if (batch2.waveformDrag === "start") {
+      geometry.cue.start = Math.max(0, Math.min(time, Number(geometry.cue.end) - 0.05));
+    } else {
+      const duration = Number(state.project?.media?.duration || Infinity);
+      geometry.cue.end = Math.min(duration, Math.max(time, Number(geometry.cue.start) + 0.05));
+    }
+    geometry.cue.source = "manual";
+    drawWaveform();
+  }
+
+  function waveformPointerUp(event) {
+    if (!batch2.waveformDrag) return;
+    const canvas = $("#waveformCanvas");
+    if (canvas?.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    batch2.waveformDrag = null;
+    renderCues();
+    scheduleSave();
+  }
+
+  function installPlacementDialog() {
+    if ($("#cuePlacementDialog")) return;
+    const dialog = document.createElement("dialog");
+    dialog.id = "cuePlacementDialog";
+    dialog.className = "cue-placement-dialog";
+    dialog.setAttribute("aria-labelledby", "cuePlacementTitle");
+    dialog.innerHTML = `
+      <form id="cuePlacementForm" class="dialog-card cue-placement-card">
+        <div class="dialog-heading"><div><p class="eyebrow">Selected caption</p><h2 id="cuePlacementTitle">Caption position</h2></div><button id="closeCuePlacement" class="icon-button" type="button" aria-label="Close caption position">×</button></div>
+        <p class="field-note">Override placement only for this caption. Choosing Project default keeps the global caption appearance setting.</p>
+        <label for="cuePositionOverride"><strong>Vertical position</strong><select id="cuePositionOverride"><option value="">Project default</option><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></label>
+        <label for="cueAlignmentOverride"><strong>Horizontal alignment</strong><select id="cueAlignmentOverride"><option value="">Project default</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+        <label for="cueMarginOverride"><strong>Edge distance</strong><span class="field-note">Leave blank to use the project default.</span><input id="cueMarginOverride" type="number" min="2" max="25" step="1" placeholder="Project default"></label>
+        <div class="button-row dialog-actions"><button id="resetCuePlacement" class="text-button" type="button">Use project default</button><span class="dialog-action-spacer"></span><button id="cancelCuePlacement" class="secondary" type="button">Cancel</button><button class="primary" type="submit">Apply position</button></div>
+      </form>`;
+    document.body.append(dialog);
+    $("#closeCuePlacement").addEventListener("click", () => dialog.close());
+    $("#cancelCuePlacement").addEventListener("click", () => dialog.close());
+    $("#resetCuePlacement").addEventListener("click", () => {
+      $("#cuePositionOverride").value = "";
+      $("#cueAlignmentOverride").value = "";
+      $("#cueMarginOverride").value = "";
+    });
+    $("#cuePlacementForm").addEventListener("submit", saveCuePlacement);
+  }
+
+  function openCuePlacement(cueId) {
+    const cue = state.project?.cues.find((item) => item.id === cueId);
+    if (!cue) return;
+    batch2.placementCueId = cueId;
+    $("#cuePositionOverride").value = cue.position_override || "";
+    $("#cueAlignmentOverride").value = cue.alignment_override || "";
+    $("#cueMarginOverride").value = cue.vertical_margin_percent_override ?? "";
+    $("#cuePlacementDialog").showModal();
+  }
+
+  function saveCuePlacement(event) {
+    event.preventDefault();
+    const cue = state.project?.cues.find((item) => item.id === batch2.placementCueId);
+    if (!cue) return;
+    const marginRaw = $("#cueMarginOverride").value.trim();
+    const margin = marginRaw === "" ? null : Number(marginRaw);
+    if (margin != null && (!Number.isFinite(margin) || margin < 2 || margin > 25)) {
+      toast("Edge distance must be between 2% and 25%.", "error");
+      return;
+    }
+    remember();
+    cue.position_override = $("#cuePositionOverride").value || null;
+    cue.alignment_override = $("#cueAlignmentOverride").value || null;
+    cue.vertical_margin_percent_override = margin;
+    $("#cuePlacementDialog").close();
+    renderCues();
+    syncPlayback();
+    scheduleSave();
+  }
+
+  function installRevisionDialog() {
+    if ($("#revisionHistoryDialog")) return;
+    const dialog = document.createElement("dialog");
+    dialog.id = "revisionHistoryDialog";
+    dialog.className = "revision-history-dialog";
+    dialog.setAttribute("aria-labelledby", "revisionHistoryTitle");
+    dialog.innerHTML = `
+      <div class="dialog-card revision-history-card">
+        <div class="dialog-heading"><div><p class="eyebrow">Automatic restore points</p><h2 id="revisionHistoryTitle">Version history</h2></div><button id="closeRevisionHistory" class="icon-button" type="button" aria-label="Close version history">×</button></div>
+        <p class="field-note">Accessible Caption Studio saves restore points as project edits are committed. Restoring creates a safety checkpoint first.</p>
+        <div id="revisionHistoryList" class="revision-history-list" role="list"></div>
+      </div>`;
+    document.body.append(dialog);
+    $("#closeRevisionHistory").addEventListener("click", () => dialog.close());
+  }
+
+  async function openRevisionHistory() {
+    if (!state.project) return;
+    const list = $("#revisionHistoryList");
+    list.textContent = "Loading restore points…";
+    $("#revisionHistoryDialog").showModal();
+    try {
+      const revisions = await api(`/api/projects/${state.project.id}/revisions`);
+      renderRevisionHistory(revisions);
+    } catch (error) {
+      list.textContent = error.message;
+    }
+  }
+
+  function renderRevisionHistory(revisions) {
+    const list = $("#revisionHistoryList");
+    list.replaceChildren();
+    if (!revisions.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state revision-empty";
+      empty.textContent = "No restore points yet. Your first saved edit will create one automatically.";
+      list.append(empty);
+      return;
+    }
+    revisions.forEach((revision) => {
+      const row = document.createElement("article");
+      row.className = "revision-row";
+      row.setAttribute("role", "listitem");
+      const copy = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = new Date(revision.created_at).toLocaleString();
+      const meta = document.createElement("span");
+      meta.textContent = `${revision.cue_count} captions · ${revision.reason}`;
+      copy.append(title, meta);
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "secondary";
+      restore.textContent = "Restore";
+      restore.addEventListener("click", () => restoreRevision(revision.id, restore));
+      row.append(copy, restore);
+      list.append(row);
+    });
+  }
+
+  async function restoreRevision(revisionId, button) {
+    button.disabled = true;
+    button.textContent = "Restoring…";
+    try {
+      state.project = await api(`/api/projects/${state.project.id}/revisions/${encodeURIComponent(revisionId)}/restore`, { method: "POST" });
+      $("#revisionHistoryDialog").close();
+      renderProject();
+      toast("Earlier project version restored.");
+    } catch (error) {
+      toast(error.message, "error");
+      button.disabled = false;
+      button.textContent = "Restore";
+    }
+  }
+
+  function updateBatch2Controls() {
+    const backup = $("#backupProjectButton");
+    if (backup) backup.disabled = !state.project;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    installBatch2ProjectControls();
+    installBatch2EditorTools();
+    installPlacementDialog();
+    installRevisionDialog();
+    renderProjects();
+  });
+})();
