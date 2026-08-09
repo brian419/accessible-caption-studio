@@ -7,6 +7,12 @@
   <title>Accessible Caption Studio</title>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem("accessible-caption-theme")==="dark"?"dark":"light"}catch(_){document.documentElement.dataset.theme="light"}</script>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    @media (min-width: 651px) {
+      /* Four 272px project-card rows, their gaps, and the list padding/border. */
+      .project-list-container { max-height: calc(1090px + 4.7rem); }
+    }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
