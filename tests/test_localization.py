@@ -183,7 +183,7 @@ def test_validate_endpoint_recomputes_translation_qa(tmp_path: Path) -> None:
         duration=5,
         has_video=False,
     )
-    project.cues = [CaptionCue(start=0, end=2, text="Alice paid 42 dollars")]
+    project.cues = [CaptionCue(start=0, end=2, text="Yesterday Alice paid 42 dollars")]
     store.save(project)
     project = store.get(project.id)
     original = project.original_caption_track()
@@ -192,7 +192,7 @@ def test_validate_endpoint_recomputes_translation_qa(tmp_path: Path) -> None:
         kind="translation",
         source_track_id=original.id,
         source_language="en",
-        cues=[CaptionCue(start=0, end=2, text="Alicia pagó 24 dólares")],
+        cues=[CaptionCue(start=0, end=2, text="Ayer Alicia pagó 24 dólares")],
     )
     project.caption_tracks.append(translated)
     project.activate_caption_track(translated.id)
