@@ -1,5 +1,11 @@
-from accessible_caption_studio.models import CaptionCue
-from accessible_caption_studio.validation import validate_cues
+import pytest
+
+from accessible_caption_studio.models import CaptionCue, CaptionStyle
+from accessible_caption_studio.validation import (
+    caption_style_readability_findings,
+    contrast_ratio,
+    validate_cues,
+)
 
 
 def test_reports_timing_and_readability_problems() -> None:
@@ -39,3 +45,34 @@ def test_invalid_overlap_group_reports_missing_speaker_and_timing() -> None:
     ]
     codes = {finding.code for finding in validate_cues(cues, 3)}
     assert {"overlap_missing_speaker", "overlap_timing_mismatch"} <= codes
+
+
+def test_contrast_ratio_matches_known_black_white_extremes() -> None:
+    assert contrast_ratio("#FFFFFF", "#000000") == pytest.approx(21.0)
+    assert contrast_ratio("#777777", "#777777") == pytest.approx(1.0)
+
+
+def test_caption_style_reports_low_contrast() -> None:
+    style = CaptionStyle(
+        text_color="#777777",
+        background_color="#888888",
+        background_opacity=0.9,
+    )
+    codes = {finding.code for finding in caption_style_readability_findings(style)}
+    assert "style_low_contrast" in codes
+
+
+def test_transparent_caption_without_edges_reports_video_separation_warning() -> None:
+    style = CaptionStyle(
+        background_opacity=0.2,
+        outline_size_percent=0,
+        shadow_size_percent=0,
+    )
+    codes = {finding.code for finding in caption_style_readability_findings(style)}
+    assert "style_weak_video_separation" in codes
+
+
+def test_default_caption_style_does_not_trigger_contrast_or_separation_warning() -> None:
+    codes = {finding.code for finding in caption_style_readability_findings(CaptionStyle())}
+    assert "style_low_contrast" not in codes
+    assert "style_weak_video_separation" not in codes
