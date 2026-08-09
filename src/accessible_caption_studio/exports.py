@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .captions import to_srt, to_transcript_html, to_vtt
 from .errors import StudioError
-from .media import require_tools
+from .media import inspect_media, require_tools
 from .models import CaptionCue, CaptionStyle, ExportArtifact, Project
 from .storage import safe_filename
 
@@ -313,12 +313,19 @@ def _drawtext_filter(
 def _write_filter_script(project: Project, temporary_dir: Path) -> Path:
     items = _render_items(project)
     script = temporary_dir / "caption-filter.txt"
-    if not items:
-        script.write_text("[0:v]null[captioned]", encoding="utf-8")
-        return script
-
     video_width = project.media.width if project.media and project.media.width else 1280
     video_height = project.media.height if project.media and project.media.height else 720
+    video_width = max(2, round(video_width / 2) * 2)
+    video_height = max(2, round(video_height / 2) * 2)
+    normalization = (
+        f"scale={video_width}:{video_height}:flags=lanczos,setsar=1"
+    )
+    if not items:
+        script.write_text(
+            f"[0:v]{normalization}[captioned]", encoding="utf-8"
+        )
+        return script
+
     entries: list[tuple[Path, float, float, int, int]] = []
     for item_index, (start, end, text) in enumerate(items):
         lines = _wrap_export_text(text, project.caption_style, video_width, video_height)
@@ -327,8 +334,8 @@ def _write_filter_script(project: Project, temporary_dir: Path) -> Path:
             text_path.write_text(line, encoding="utf-8")
             entries.append((text_path, start, end, line_index, len(lines)))
 
-    current = "[0:v]"
-    filters: list[str] = []
+    current = "[normalized]"
+    filters: list[str] = [f"[0:v]{normalization}[normalized]"]
     for index, (text_path, start, end, line_index, total_lines) in enumerate(entries):
         output = "[captioned]" if index == len(entries) - 1 else f"[caption{index}]"
         drawtext = _drawtext_filter(
@@ -371,8 +378,15 @@ def export_captioned_mp4(
     process: subprocess.Popen[str] | None = None
 
     try:
-        with tempfile.TemporaryDirectory(prefix=".caption-render-", dir=project_dir) as temp_name:
-            script = _write_filter_script(project, Path(temp_name))
+        with tempfile.TemporaryDirectory(
+            prefix=".caption-render-", dir=project_dir
+        ) as temp_name:
+            render_media = inspect_media(source)
+            render_project = project.model_copy(deep=True)
+            if render_project.media:
+                render_project.media.width = render_media.width
+                render_project.media.height = render_media.height
+            script = _write_filter_script(render_project, Path(temp_name))
             process = subprocess.Popen(
                 [
                     "ffmpeg",
@@ -393,6 +407,10 @@ def export_captioned_mp4(
                     "veryfast",
                     "-crf",
                     "21",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-metadata:s:v:0",
+                    "rotate=0",
                     "-c:a",
                     "aac",
                     "-b:a",
