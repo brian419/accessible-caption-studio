@@ -98,12 +98,15 @@ class JobProgress:
 
 
 class JobManager:
+    ACTIVE_STATES = {JobState.QUEUED, JobState.RUNNING, JobState.CANCELLING}
+
     def __init__(self, store: ProjectStore) -> None:
         self.store = store
         self._jobs: dict[str, AnalysisJob] = {}
         self._cancelled: set[str] = set()
         self._contexts: dict[str, JobProgress] = {}
         self._lock = threading.RLock()
+        self.recovered_job_ids = self._recover_interrupted_jobs()
 
     def start(
         self,
@@ -144,6 +147,24 @@ class JobManager:
                 job.stage = "Cancelled"
                 self._persist(job)
         return job
+
+    def _recover_interrupted_jobs(self) -> list[str]:
+        recovered: list[str] = []
+        for job in self.store.list_jobs():
+            if job.state not in self.ACTIVE_STATES:
+                continue
+            self.store.cleanup_partial_artifacts(job.project_id)
+            job.state = JobState.FAILED
+            job.stage = "Interrupted"
+            job.error_code = "job_interrupted"
+            job.error = "Accessible Caption Studio closed before this job finished."
+            job.message = (
+                "This job was interrupted when the app closed. Saved project data remains available."
+            )
+            job.result = None
+            self._persist(job)
+            recovered.append(job.id)
+        return recovered
 
     def _run(
         self,
