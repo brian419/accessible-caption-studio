@@ -2474,26 +2474,30 @@ function toast(message, type = "info") {
     controls.id = "projectBrowserControls";
     controls.className = "project-browser-controls";
     controls.innerHTML = `
-      <label class="project-search-field" for="projectSearch">
-        <span>Search projects</span>
-        <input id="projectSearch" type="search" placeholder="Search by project name" autocomplete="off">
-      </label>
-      <label for="projectTypeFilter">Type
-        <select id="projectTypeFilter">
-          <option value="all">All media</option>
-          <option value="video">Video</option>
-          <option value="audio">Audio only</option>
-        </select>
-      </label>
-      <label for="projectSort">Sort
-        <select id="projectSort">
-          <option value="recent">Most recent</option>
-          <option value="oldest">Oldest updated</option>
-          <option value="name">Name A–Z</option>
-          <option value="captions">Most captions</option>
-        </select>
-      </label>
-      <span id="projectFilterCount" class="project-filter-count" role="status"></span>`;
+      <div class="project-search-cluster">
+        <label class="project-search-field" for="projectSearch">
+          <span>Search projects</span>
+          <input id="projectSearch" type="search" placeholder="Search by project name" autocomplete="off">
+        </label>
+        <span id="projectFilterCount" class="project-filter-count" role="status"></span>
+      </div>
+      <div class="project-refine-controls" role="group" aria-label="Project view options">
+        <label for="projectTypeFilter"><span>Media</span>
+          <select id="projectTypeFilter">
+            <option value="all">All media</option>
+            <option value="video">Video</option>
+            <option value="audio">Audio only</option>
+          </select>
+        </label>
+        <label for="projectSort"><span>Sort</span>
+          <select id="projectSort">
+            <option value="recent">Most recent</option>
+            <option value="oldest">Oldest updated</option>
+            <option value="name">Name A-Z</option>
+            <option value="captions">Most captions</option>
+          </select>
+        </label>
+      </div>`;
     container.before(controls);
     const noResults = document.createElement("p");
     noResults.id = "projectFilterEmpty";
@@ -2520,22 +2524,6 @@ function toast(message, type = "info") {
     if ($("#captionProductivityTools")) return;
     const editorHeading = document.querySelector(".editor-heading");
     if (!editorHeading) return;
-    const tools = document.createElement("div");
-    tools.id = "captionProductivityTools";
-    tools.className = "caption-productivity-tools";
-    tools.innerHTML = `
-      <div class="caption-search-row">
-        <label for="captionSearch"><span>Find caption text</span><input id="captionSearch" type="search" placeholder="Find text" autocomplete="off"></label>
-        <button id="captionFindNext" class="secondary editor-action" type="button">Find next</button>
-        <button id="lowConfidenceReview" class="secondary editor-action" type="button">Review uncertain</button>
-      </div>
-      <div class="caption-replace-row">
-        <label for="captionReplace"><span>Replace with</span><input id="captionReplace" type="text" placeholder="Replacement text"></label>
-        <button id="captionReplaceCurrent" class="secondary editor-action" type="button">Replace</button>
-        <button id="captionReplaceAll" class="secondary editor-action" type="button">Replace all</button>
-        <span id="captionSearchStatus" class="caption-search-status" role="status"></span>
-      </div>`;
-    editorHeading.append(tools);
 
     const redoButton = document.createElement("button");
     redoButton.id = "redoButton";
@@ -2544,6 +2532,43 @@ function toast(message, type = "info") {
     redoButton.textContent = "Redo";
     redoButton.disabled = true;
     $("#undoButton").after(redoButton);
+
+    const titleRow = editorHeading.querySelector(".editor-title-row");
+    const addButton = $("#addCueButton");
+    const titleActions = document.createElement("div");
+    titleActions.className = "editor-title-actions";
+    const reviewButton = document.createElement("button");
+    reviewButton.id = "lowConfidenceReview";
+    reviewButton.className = "secondary editor-review-action";
+    reviewButton.type = "button";
+    reviewButton.textContent = "Review uncertain";
+    titleActions.append(reviewButton);
+    if (addButton) titleActions.append(addButton);
+    titleRow?.append(titleActions);
+
+    const tools = document.createElement("details");
+    tools.id = "captionProductivityTools";
+    tools.className = "caption-productivity-tools";
+    tools.innerHTML = `
+      <summary>
+        <span class="caption-find-summary-copy">
+          <strong>Find & replace captions</strong>
+          <small>Search the whole transcript without crowding the timeline.</small>
+        </span>
+        <span id="captionSearchStatus" class="caption-search-status" role="status"></span>
+      </summary>
+      <div class="caption-find-body">
+        <div class="caption-search-row">
+          <label for="captionSearch"><span>Find caption text</span><input id="captionSearch" type="search" placeholder="Find text in captions" autocomplete="off"></label>
+          <button id="captionFindNext" class="secondary editor-action" type="button">Find next</button>
+        </div>
+        <div class="caption-replace-row">
+          <label for="captionReplace"><span>Replace with</span><input id="captionReplace" type="text" placeholder="Replacement text"></label>
+          <button id="captionReplaceCurrent" class="secondary editor-action" type="button">Replace</button>
+          <button id="captionReplaceAll" class="secondary editor-action" type="button">Replace all</button>
+        </div>
+      </div>`;
+    editorHeading.append(tools);
 
     $("#captionSearch").addEventListener("input", () => {
       productivity.captionSearchIndex = -1;
@@ -2580,23 +2605,34 @@ function toast(message, type = "info") {
 
     const help = document.querySelector(".playback-help");
     if (help) {
+      const extra = document.createElement("div");
+      extra.className = "playback-extra-tools";
+
       const button = document.createElement("button");
       button.id = "safeAreaToggle";
       button.className = "text-button safe-area-toggle";
       button.type = "button";
       button.setAttribute("aria-pressed", "false");
-      button.textContent = "Show safe areas";
+      button.textContent = "Safe areas";
       button.addEventListener("click", () => {
         const enabled = guides.hidden;
         guides.hidden = !enabled;
         button.setAttribute("aria-pressed", String(enabled));
-        button.textContent = enabled ? "Hide safe areas" : "Show safe areas";
+        button.textContent = enabled ? "Hide safe areas" : "Safe areas";
       });
-      help.append(button);
-      const shortcut = document.createElement("span");
-      shortcut.className = "precision-shortcuts";
-      shortcut.innerHTML = `<kbd>Shift</kbd>+<kbd>←/→</kbd> 0.1s · <kbd>Option/Alt</kbd>+<kbd>←/→</kbd> 0.5s · <kbd>[</kbd>/<kbd>]</kbd> set cue edges · <kbd>P</kbd>/<kbd>N</kbd> previous/next`;
-      help.append(shortcut);
+
+      const shortcuts = document.createElement("details");
+      shortcuts.className = "shortcut-disclosure";
+      shortcuts.innerHTML = `
+        <summary>Timing shortcuts</summary>
+        <div class="timing-shortcut-grid">
+          <span><span><kbd>Shift</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.1s</small></span>
+          <span><span><kbd>Option/Alt</kbd> + <kbd>←/→</kbd></span><small>Nudge 0.5s</small></span>
+          <span><span><kbd>[</kbd> / <kbd>]</kbd></span><small>Set cue start / end</small></span>
+          <span><span><kbd>P</kbd> / <kbd>N</kbd></span><small>Previous / next caption</small></span>
+        </div>`;
+      extra.append(button, shortcuts);
+      help.append(extra);
     }
   }
 
