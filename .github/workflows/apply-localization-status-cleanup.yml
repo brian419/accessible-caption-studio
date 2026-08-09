@@ -1,0 +1,38 @@
+name: Apply localization status cleanup
+
+on:
+  push:
+    paths:
+      - '.github/localization-status-cleanup-trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work-2026-08-09
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply cleanup
+        run: python scripts/apply_localization_status_cleanup.py
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/accessible_caption_studio/web/final_batch.js tests/browser/test_browser_ui.py
+          git commit -m "Simplify caption localization status styling"
+          git push origin HEAD:work-2026-08-09
+      - name: Remove one-time patch files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git pull --rebase origin work-2026-08-09
+          rm -f scripts/apply_localization_status_cleanup.py .github/workflows/apply-localization-status-cleanup.yml .github/localization-status-cleanup-trigger.txt
+          git add -A
+          git commit -m "Remove localization status cleanup tooling"
+          git push origin HEAD:work-2026-08-09
